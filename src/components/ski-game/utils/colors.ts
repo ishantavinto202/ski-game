@@ -1,0 +1,38 @@
+export const SKI_GAME_COLORS = {
+  snow: '#F4F9FF',
+  playerPlaceholder: '#3D5A80',
+  playerPlaceholderBorder: '#1D3557',
+  obstacleSmallRock: '#9CA3AF',
+  obstacleLargeBoulder: '#4B5563',
+  obstacleTree: '#15803D',
+  obstacleTreeStump: '#92400E',
+  obstacleCabin: '#DC2626',
+  obstacleWoodenFence: '#EA580C',
+  decorativeEdgeTree: '#166534',
+  decorativeEdgeTreeBorder: '#14532D',
+  obstaclePlaceholderBorder: '#374151',
+  coinPlaceholder: '#FACC15',
+  coinPlaceholderBorder: '#CA8A04',
+  speedBoostPlaceholder: '#2563EB',
+  speedBoostPlaceholderBorder: '#1D4ED8',
+  shieldPickupFill: 'rgba(255, 255, 255, 0.92)',
+  shieldPickupBorder: '#06B6D4',
+  shieldPickupIcon: '#0E7490',
+  shieldBubbleFill: 'rgba(56, 189, 248, 0.40)',
+  shieldBubbleBorder: 'rgba(186, 230, 253, 0.95)',
+  shieldBubbleGlow: 'rgba(14, 165, 233, 0.45)',
+  shieldDurationBarFill: '#14B8A6',
+  snowTrailDot: '#9ECAE8',
+  collisionBurstFragment: '#B8E0F5',
+  shieldShatterFragment: '#67D4F5',
+} as const;
+
+/** Worklet-safe placeholder fill colors indexed by {@link OBSTACLE_VARIANT_RENDER_INDEX}. */
+export const OBSTACLE_VARIANT_PLACEHOLDER_COLORS: readonly string[] = [
+  SKI_GAME_COLORS.obstacleSmallRock,
+  SKI_GAME_COLORS.obstacleLargeBoulder,
+  SKI_GAME_COLORS.obstacleTree,
+  SKI_GAME_COLORS.obstacleTreeStump,
+  SKI_GAME_COLORS.obstacleCabin,
+  SKI_GAME_COLORS.obstacleWoodenFence,
+];

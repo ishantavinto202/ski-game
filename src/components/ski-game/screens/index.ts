@@ -1,0 +1,1 @@
+export { SkiGameScreen } from './SkiGameScreen';
