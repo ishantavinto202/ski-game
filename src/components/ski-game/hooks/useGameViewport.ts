@@ -2,8 +2,10 @@ import { useCallback, useEffect, useState } from 'react';
 import type { LayoutChangeEvent } from 'react-native';
 
 import { createPlayerForViewport, type PlayerSnapshot } from '../entities/Player';
+import { resetChaserPathState, resolvePlayerWorldY } from '../entities/ChaserPath';
 import type { GameEngine, ViewportSize } from '../engine/GameEngine';
 import { useGameEngineContext } from '../engine/GameEngineContext';
+import { GAME_CONFIG } from '../utils/GameConfig';
 
 type GameViewportState = {
   onLayout: (event: LayoutChangeEvent) => void;
@@ -21,6 +23,17 @@ function syncPlayerToViewport(engine: GameEngine, width: number, height: number)
   const positioned = createPlayerForViewport(width, height);
   player.x = positioned.x;
   player.y = positioned.y;
+
+  // Re-anchor chaser behind the player without resetting chase pressure / gap smoothing.
+  const chaser = engine.chaserRef.current;
+  const playerCenterX = player.x + player.width * 0.5;
+  chaser.x = playerCenterX - GAME_CONFIG.CHASER_WIDTH * 0.5;
+  chaser.y = player.y + chaser.currentGap;
+  resetChaserPathState(
+    chaser.path,
+    resolvePlayerWorldY(engine.worldRef.current.scrollOffsetY, player.y),
+    playerCenterX - GAME_CONFIG.CHASER_WIDTH * 0.5,
+  );
 
   return player.toSnapshot();
 }

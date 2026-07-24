@@ -10,6 +10,7 @@ import { CollisionSystem } from '../systems/CollisionSystem';
 import { CoinSystem } from '../systems/CoinSystem';
 import { ShieldSystem } from '../systems/ShieldSystem';
 import { SpeedBoostSystem } from '../systems/SpeedBoostSystem';
+import { ChaserSystem } from '../systems/ChaserSystem';
 import { HealthSystem } from '../systems/HealthSystem';
 import { GameOverSystem } from '../systems/GameOverSystem';
 import { ObstacleSystem } from '../systems/ObstacleSystem';
@@ -53,6 +54,7 @@ function createCoreSystems(): GameSystem[] {
     new CoinSystem(),
     new ShieldSystem(),
     new SpeedBoostSystem(),
+    new ChaserSystem(),
   );
 
   return systems;

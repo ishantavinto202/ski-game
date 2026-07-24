@@ -11,6 +11,7 @@ export { CollisionBurstRenderer } from './CollisionBurstRenderer';
 export { GameplayFeedbackRenderer } from './GameplayFeedbackRenderer';
 export { ShieldShatterRenderer } from './ShieldShatterRenderer';
 export { SnowTrailRenderer } from './SnowTrailRenderer';
+export { ChaserRenderer } from './ChaserRenderer';
 export { Hud } from './Hud';
 export { PauseButton } from './PauseButton';
 export { PauseOverlay } from './PauseOverlay';

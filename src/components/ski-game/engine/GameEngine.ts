@@ -6,6 +6,7 @@ import { createShieldPoolState } from '../entities/Shield';
 import { createSpeedBoostPoolState } from '../entities/SpeedBoost';
 import type { GameSystem } from '../types';
 import { createInitialCameraState, type CameraState } from '../types/camera-state';
+import { createInitialChaserState, type ChaserState } from '../types/ChaserTypes';
 import type { CoinPoolState } from '../types/CoinTypes';
 import { createInitialCollisionState, type CollisionState } from '../types/CollisionTypes';
 import type { DecorativeTreePoolState } from '../types/DecorativeTreeTypes';
@@ -57,6 +58,7 @@ export class GameEngine {
   readonly coinRef: EngineRef<CoinPoolState> = { current: createCoinPoolState() };
   readonly shieldRef: EngineRef<ShieldPoolState> = { current: createShieldPoolState() };
   readonly speedBoostRef: EngineRef<SpeedBoostPoolState> = { current: createSpeedBoostPoolState() };
+  readonly chaserRef: EngineRef<ChaserState> = { current: createInitialChaserState() };
   readonly gameOverCacheRef: EngineRef<GameOverCacheState> = { current: createInitialGameOverCacheState() };
 
   private readonly systems = new Map<string, GameSystem>();

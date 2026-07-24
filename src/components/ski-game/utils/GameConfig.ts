@@ -177,6 +177,73 @@ export const GAME_CONFIG = {
   SPEED_BOOST_RENDER_MARGIN: 64,
   /** Inset (px) applied to speed boost pickup AABB for collection tests. */
   SPEED_BOOST_COLLISION_PADDING: 4,
+
+  /**
+   * Chaser placeholder footprint (px) — stable for a future sprite swap.
+   * Slightly smaller than the player so the silhouette reads as a distinct follower.
+   */
+  CHASER_WIDTH: 40,
+  CHASER_HEIGHT: 58,
+  /**
+   * `currentGap` = player-top → chaser-top (px). Edge-to-edge snow strip =
+   * `currentGap − PLAYER_HEIGHT` (player bottom to chaser top).
+   */
+  /** Vertical gap (px) between player top and chaser top at full health / no pressure. */
+  CHASER_SAFE_GAP: 180,
+  /** Baseline gap at 2 hearts; also intro / Play Again starting `currentGap`. */
+  CHASER_PRESSURE_GAP: 128,
+  /** Target visible snow (px) between player bottom and chaser top at 1-heart baseline. */
+  CHASER_DANGER_EDGE_GAP: 25,
+  /** Target visible snow (px) at max-pressure clamp (must stay below DANGER edge gap). */
+  CHASER_MIN_EDGE_GAP: 16,
+  /** 1-heart baseline: PLAYER_HEIGHT (64) + CHASER_DANGER_EDGE_GAP (25) = 89. */
+  CHASER_DANGER_GAP: 89,
+  /** Max-pressure floor: PLAYER_HEIGHT (64) + CHASER_MIN_EDGE_GAP (16) = 80. */
+  CHASER_MIN_GAP: 80,
+  /** Cap on accumulated chasePressure (px-equivalent gap reduction). */
+  CHASER_MAX_PRESSURE: 100,
+  /** Temporary separation added to natural target while Speed Boost is active. */
+  CHASER_BOOST_ESCAPE_BONUS: 90,
+  /** Exponential smoothing when boost opens gap (currentGap → larger target). */
+  CHASER_BOOST_ESCAPE_SMOOTHING: 6,
+  /** Exponential smoothing for normal gap changes and post-boost catch-up. */
+  CHASER_GAP_SMOOTHING: 3.5,
+  /** Exponential smoothing rate for chaser X → path target. */
+  CHASER_HORIZONTAL_SMOOTHING: 5.5,
+  /** Idle time (ms) after a hit before chase pressure begins recovering. */
+  CHASER_RECOVERY_DELAY_MS: 2500,
+  /** Chase pressure recovered per second after the delay (slow). */
+  CHASER_RECOVERY_PRESSURE_PER_SEC: 4,
+  /** Base vertical approach window above Chaser for local visual avoidance (px). */
+  CHASER_AVOID_LOOKAHEAD: 120,
+  /** Extra approach px per px of estimated required lateral dodge. */
+  CHASER_LOOKAHEAD_PER_LATERAL_PX: 1.75,
+  /** Horizontal padding for threat tests and side placement (px). */
+  CHASER_AVOID_PADDING: 10,
+  /**
+   * Chaser-only visual avoidance floor (px). Gameplay collision AABBs unchanged.
+   * Floors tiny rocks/stumps so the Chaser sprite has room to pass beside them.
+   */
+  CHASER_MIN_AVOID_OBSTACLE_WIDTH: 44,
+  CHASER_MIN_AVOID_OBSTACLE_HEIGHT: 48,
+  /**
+   * Obstacle avoidance envelope cleared once its top passes this margin below
+   * Chaser bottom (px). Uses Chaser visual envelope, not gameplay AABB alone.
+   */
+  CHASER_AVOID_PASS_MARGIN: 8,
+  /**
+   * Opposite-side clearance must beat the preferred side by at least this many
+   * px before a LEFT↔RIGHT reversal is allowed (spatial hysteresis, not a timer).
+   */
+  CHASER_REVERSAL_CLEARANCE_ADVANTAGE: 16,
+  /** Horizontal smoothing while actively steering around an obstacle. */
+  CHASER_AVOIDANCE_SMOOTHING: 8,
+  /** No micro-corrections toward path target while within this band (px). */
+  CHASER_FOLLOW_DEAD_ZONE: 10,
+  /** World-Y spacing between Player path breadcrumbs (px). */
+  CHASER_PATH_SAMPLE_SPACING: 12,
+  /** Pre-allocated path ring-buffer capacity (~576 world px at 12 px spacing). */
+  CHASER_PATH_BUFFER_CAPACITY: 48,
 } as const;
 
 export type GameConfig = typeof GAME_CONFIG;

@@ -36,6 +36,8 @@ export {
   SHIELD_SYSTEM_ID,
   SpeedBoostSystem,
   SPEED_BOOST_SYSTEM_ID,
+  ChaserSystem,
+  CHASER_SYSTEM_ID,
   GameOverSystem,
   GAME_OVER_SYSTEM_ID,
   RestartSystem,
@@ -60,7 +62,7 @@ export {
   resetGame,
 } from './entities';
 export { playAgain } from './systems/RestartSystem';
-export { PlayerRenderer, WorldRenderer, TouchControls, ObstacleRenderer, CoinRenderer, SpeedBoostRenderer, ShieldPickupRenderer, SnowTrailRenderer, CollisionBurstRenderer, ShieldShatterRenderer, ShieldBubbleRenderer, Hud, PauseButton, PauseOverlay, GameOverOverlay } from './ui';
+export { PlayerRenderer, WorldRenderer, TouchControls, ObstacleRenderer, CoinRenderer, SpeedBoostRenderer, ShieldPickupRenderer, SnowTrailRenderer, CollisionBurstRenderer, ShieldShatterRenderer, ChaserRenderer, ShieldBubbleRenderer, Hud, PauseButton, PauseOverlay, GameOverOverlay } from './ui';
 export type { PauseOverlayProps, PauseQuitHandler, GameOverOverlayProps, GameOverActionHandler } from './ui';
 export type {
   GameSystem,
@@ -84,6 +86,7 @@ export type {
   ObstaclePoolState,
   CollisionState,
   HealthState,
+  ChaserState,
   CoinRecord,
   CoinPoolState,
   ShieldRecord,

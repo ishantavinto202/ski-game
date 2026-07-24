@@ -1,5 +1,26 @@
 export { Player, createPlayerForViewport, type PlayerSnapshot } from './Player';
 export {
+  createInitialChaserState,
+  resetChaserState,
+  applyChasePressure,
+  resolveChaserBaselineGap,
+  resolveChaserNaturalTargetGap,
+  resolveChaserFinalTargetGap,
+  resolveChaserEdgeToEdgeGap,
+  snapChaserBehindPlayer,
+  type ChaserState,
+} from './Chaser';
+export { clearChaserAvoidanceState, resolveChaserHorizontalTargetX } from './ChaserAvoidance';
+export {
+  createChaserPathState,
+  recordChaserPathSample,
+  resetChaserPathState,
+  resolveChaserWorldY,
+  resolvePathFollowX,
+  resolvePlayerWorldY,
+  type ChaserPathState,
+} from './ChaserPath';
+export {
   createCoinPoolState,
   activateCoinFromSpawn,
   deactivateCoin,

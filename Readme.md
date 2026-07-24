@@ -293,7 +293,7 @@ Pause control and overlay — reads `gameStateRef` only; transitions go through 
 
 **Viewport layer order (bottom → top):**
 
-1. **WorldRenderer** → **ObstacleRenderer** → **CoinRenderer** → **SpeedBoostRenderer** → **ShieldPickupRenderer** → **SnowTrailRenderer** → **CollisionBurstRenderer** → **ShieldShatterRenderer** → **ShieldBubbleRenderer** → **PlayerRenderer**
+1. **WorldRenderer** → **ObstacleRenderer** → **CoinRenderer** → **SpeedBoostRenderer** → **ShieldPickupRenderer** → **SnowTrailRenderer** → **CollisionBurstRenderer** → **ShieldShatterRenderer** → **ChaserRenderer** → **ShieldBubbleRenderer** → **PlayerRenderer**
 2. **Hud**
 3. **TouchControls**
 4. **PauseButton** (playing only)
@@ -327,13 +327,13 @@ Detects zero health during play and shows a summary overlay.
 5. **ShieldPickupRenderer**
 6. **SnowTrailRenderer** (behind player)
 7. **CollisionBurstRenderer** / **ShieldShatterRenderer** (impact VFX; behind player)
-8. **ShieldBubbleRenderer** then **PlayerRenderer** (when player mounted; bubble behind skier so the player sits inside the bubble art)
-6. **PlayerRenderer**
-7. **Hud**
-8. **TouchControls**
-9. **PauseButton**
-10. **PauseOverlay**
-11. **GameOverOverlay**
+8. **ChaserRenderer** (chase-pressure follower; behind shield bubble / player)
+9. **ShieldBubbleRenderer** then **PlayerRenderer** (when player mounted; bubble behind skier so the player sits inside the bubble art)
+10. **Hud**
+11. **TouchControls**
+12. **PauseButton**
+13. **PauseOverlay**
+14. **GameOverOverlay**
 
 While `game_over`, simulation fixed steps stop (same as pause); `notifyFrame` keeps the last frame visible under the overlay.
 
@@ -385,7 +385,7 @@ Simulation state lives in engine refs. React reads layout once; scrolling update
 
 **GameConfig:** `BASE_SCROLL_SPEED`, `FIXED_TIMESTEP`, `DIFFICULTY_RAMP_DURATION_MS`, `MAX_DIFFICULTY_SPEED_MULTIPLIER`, `MIN_SPAWN_INTERVAL_MULTIPLIER`, plus portrait tuning (`REFERENCE_VIEWPORT_*`, `LOOK_AHEAD_VIEWPORT_HEIGHT_RATIO`, `PLAYER_LOOKAHEAD_RATIO`, steer/obstacle ratios — see **Portrait orientation**).
 
-**Registration order:** **GameStateSystem** → `TimeSystem` → **DifficultySystem** → `WorldSystem` → `InputSystem` → `PlayerSystem` → `MovementSystem` → `PlayerFeelSystem` → `CameraSystem` → **SpawnManager** → **ObstacleSystem** → **CollisionSystem** → **HealthSystem** → **GameOverSystem** → **CoinSystem** → **ShieldSystem** → **SpeedBoostSystem** (gameplay systems run in `runFixedUpdate` when `playing`).
+**Registration order:** **GameStateSystem** → `TimeSystem` → **DifficultySystem** → `WorldSystem` → `InputSystem` → `PlayerSystem` → `MovementSystem` → `PlayerFeelSystem` → `CameraSystem` → **SpawnManager** → **ObstacleSystem** → **CollisionSystem** → **HealthSystem** → **GameOverSystem** → **CoinSystem** → **ShieldSystem** → **SpeedBoostSystem** → **ChaserSystem** (gameplay systems run in `runFixedUpdate` when `playing`).
 
 **Vertical scroll:** **WorldSystem** drives `worldRef.scrollOffsetY` using difficulty and optional speed boost (see **Speed boost**). **SpawnManager** uses `difficultyRef.spawnIntervalMultiplier` for pickup timing only; obstacle density is lookahead-driven (see **Lookahead population**). **TimeSystem** distance still uses base speed only. Look-ahead ratios and spawn helpers are unchanged.
 
@@ -603,7 +603,7 @@ Pooled obstacles in world space (**ObstacleSystem**) with separate presentation 
 
 **Rendering flow:**
 
-1. **SkiGameViewport** layer order: **WorldRenderer** → **ObstacleRenderer** → **CoinRenderer** → **SpeedBoostRenderer** → **ShieldPickupRenderer** → **SnowTrailRenderer** → **CollisionBurstRenderer** → **ShieldShatterRenderer** → **ShieldBubbleRenderer** → **PlayerRenderer** → **GameplayFeedbackRenderer** → **Hud** → **TouchControls** → **PauseButton** → **PauseOverlay** → **GameOverOverlay**.
+1. **SkiGameViewport** layer order: **WorldRenderer** → **ObstacleRenderer** → **CoinRenderer** → **SpeedBoostRenderer** → **ShieldPickupRenderer** → **SnowTrailRenderer** → **CollisionBurstRenderer** → **ShieldShatterRenderer** → **ChaserRenderer** → **ShieldBubbleRenderer** → **PlayerRenderer** → **GameplayFeedbackRenderer** → **Hud** → **TouchControls** → **PauseButton** → **PauseOverlay** → **GameOverOverlay**.
 2. Each frame, `engine.onFrame` updates shared values per fixed slot index (`obstacleRef.obstacles[i]`).
 3. Screen rect: center-anchored world position minus `worldRef.scrollOffsetY` and `cameraRef.offsetX`.
 4. Culled if outside viewport ± `OBSTACLE_RENDER_MARGIN` (`opacity` 0); inactive slots hidden.
@@ -648,7 +648,7 @@ const { hasCollision, obstacleId, obstacleType } = engine.collisionRef.current;
 
 ## Health
 
-Run score and per-variant obstacle consequences on `engine.scoreRef` / `engine.healthRef`. **HealthSystem** runs after **CollisionSystem** and applies centralized values from `utils/score-consequences.ts`. Active shield immunity from `engine.shieldRef` still blocks all obstacle consequences (score + health).
+Run score and per-variant obstacle consequences on `engine.scoreRef` / `engine.healthRef` / `engine.chaserRef`. **HealthSystem** runs after **CollisionSystem** and applies centralized values from `utils/score-consequences.ts`. Active shield immunity from `engine.shieldRef` still blocks all obstacle consequences (score + health + chase pressure).
 
 | File | Role |
 |------|------|
@@ -656,7 +656,7 @@ Run score and per-variant obstacle consequences on `engine.scoreRef` / `engine.h
 | `types/score-state.ts` | `ScoreState` (`currentScore`, `lastDistanceScoreBucket`; score floored at 0) |
 | `utils/score-consequences.ts` | `OBSTACLE_CONSEQUENCES`, `COIN_COLLECT_SCORE`, `DISTANCE_METERS_PER_SCORE_POINT`, `applyScoreDelta`, `applyDistanceScoreProgress` |
 | `systems/TimeSystem.ts` | Advances distance; awards silent +1 score per `DISTANCE_METERS_PER_SCORE_POINT` (`25`) meters via `scoreRef` |
-| `systems/HealthSystem.ts` | Runs after **CollisionSystem**; applies score + damage from `collisionRef` |
+| `systems/HealthSystem.ts` | Runs after **CollisionSystem**; applies score + damage + chase pressure from `collisionRef` |
 
 **GameConfig (health):**
 
@@ -667,24 +667,26 @@ Run score and per-variant obstacle consequences on `engine.scoreRef` / `engine.h
 
 **Obstacle consequences (`OBSTACLE_CONSEQUENCES`):**
 
-| Variant | Score | Health |
-|---------|-------|--------|
-| `small_rock` | −15 | 0 |
-| `tree_stump` | −20 | 0 |
-| `large_boulder` | −30 | −1 |
-| `tree` | −25 | −1 |
-| `wooden_fence` | −35 | −1 |
-| `cabin` | −50 | −2 |
+| Variant | Score | Health | Chase pressure |
+|---------|-------|--------|----------------|
+| `small_rock` | −15 | 0 | 8 |
+| `tree_stump` | −20 | 0 | 10 |
+| `large_boulder` | −30 | −1 | 15 |
+| `tree` | −25 | −1 | 15 |
+| `wooden_fence` | −35 | −1 | 20 |
+| `cabin` | −50 | −2 | 30 |
 
 **Consequence flow (each fixed update, after CollisionSystem):**
 
 1. Tick down `invulnerabilityRemainingMs`; set `isInvulnerable` when &gt; 0.
 2. If `!collisionRef.hasCollision`, clear `lastDamagingObstacleId` (overlap ended) and exit.
-3. If invulnerable, ignore collision (no score or damage).
+3. If invulnerable, ignore collision (no score, damage, or chase pressure).
 4. If `collisionRef.obstacleId === lastDamagingObstacleId`, skip (same obstacle still overlapping).
-5. If `shieldRef.isShieldActive`, ignore score + damage but still record `lastDamagingObstacleId` and start `PLAYER_INVULNERABILITY_MS`.
+5. If `shieldRef.isShieldActive`, ignore score + damage + chase pressure but still record `lastDamagingObstacleId` and start `PLAYER_INVULNERABILITY_MS`.
 6. Otherwise apply `scoreDelta` via `applyScoreDelta` (`Math.max(0, score + delta)`).
-7. If `healthDamage > 0`, subtract (clamped), store `lastDamagingObstacleId`, start invulnerability. Score-only hits (0 HP) do **not** start i-frames.
+7. If `healthDamage > 0`, subtract (clamped), start invulnerability. Score-only hits (0 HP) do **not** start i-frames.
+8. Apply `chasePressure` via `applyChasePressure` on `engine.chaserRef` (once per accepted hit).
+9. Store `lastDamagingObstacleId`.
 
 **Feedback:** While `isInvulnerable`, **PlayerRenderer** alternates opacity 1.0 / 0.35 on a 60 ms / 60 ms square wave derived from `invulnerabilityRemainingMs` (no extra timer).
 
@@ -698,7 +700,55 @@ const {
 const { currentScore } = engine.scoreRef.current;
 ```
 
-Internal `lastDamagingObstacleId` prevents multi-tick score or damage from one overlap. After separating from an obstacle, a new overlap can apply consequences again once i-frames allow (or immediately for score-only obstacles).
+Internal `lastDamagingObstacleId` prevents multi-tick score, damage, or chase pressure from one overlap. After separating from an obstacle, a new overlap can apply consequences again once i-frames allow (or immediately for score-only obstacles).
+
+## Chaser (Version 1)
+
+Pressure / feedback follower behind the skier — **not** a second simulated skier.
+
+| File | Role |
+|------|------|
+| `types/ChaserTypes.ts` | `ChaserState`, `createInitialChaserState`, `resetChaserState` |
+| `entities/Chaser.ts` | Natural/final target helpers, `applyChasePressure`, `snapChaserBehindPlayer` |
+| `entities/ChaserAvoidance.ts` | Local visual obstacle steering (allocation-free scan) |
+| `systems/ChaserSystem.ts` | Gap + horizontal smoothing; pressure recovery; Speed Boost escape; avoidance integration |
+| `ui/ChaserRenderer.tsx` | Placeholder character; Reanimated `onFrame` sync from `chaserRef` |
+
+**`engine.chaserRef` fields:** `currentGap`, `targetGap`, `chasePressure`, screen `x` / `y`, `timeSinceLastPressureMs`, `avoidObstacleId`, `avoidDirection`, `lastAvoidDirection`, `path` (fixed-capacity world-space breadcrumb ring buffer).
+
+**Gap semantics:** `currentGap` is **player-top → chaser-top** (px). Visible snow between character bounds = `currentGap − PLAYER_HEIGHT` (player bottom to chaser top). Chaser screen Y = `player.y + currentGap`.
+
+**Intro / Play Again:** `currentGap` starts at `CHASER_PRESSURE_GAP` (`128`) — same proximity as 2-heart baseline — so the chaser is immediately visible. With 3 hearts and zero pressure, **natural** `targetGap` is `CHASER_SAFE_GAP` (`180`); existing exponential smoothing (`CHASER_GAP_SMOOTHING` `3.5`) gradually opens the gap (“pulling away”) without timers or a separate intro state machine.
+
+**Spatial path following (base horizontal model):** The Player leaves a **breadcrumb trail** in world space. Each fixed tick records `{ worldY, followX }` into a pre-allocated ring buffer when the Player advances `CHASER_PATH_SAMPLE_SPACING` (`12` px) in world Y (`scrollOffsetY − player.y`). Between samples the newest breadcrumb’s X is refined. The Chaser’s home horizontal target is read from this path at **its own world Y** (`scrollOffsetY − chaser.y`) with linear X interpolation — not live Player X, not elapsed-time delay. `currentGap` controls vertical separation; closer gaps naturally sample earlier points on the same spatial path. Buffer capacity `48` (~576 world px). Resets on Play Again / viewport re-anchor; recording pauses while not `playing`. Speed boost does not break path following — breadcrumbs are spatial, not temporal.
+
+**Local visual obstacle avoidance:** **ChaserSystem** steers with a **Chaser-specific visual avoidance envelope** (not gameplay collision AABBs, not CollisionSystem, not pathfinding). Effective avoidance size is `max(gameplaySize, CHASER_MIN_AVOID_OBSTACLE_*)` — e.g. `small_rock` gameplay `32×28` becomes avoidance `44×48`. Threats use horizontal corridor tests against the **path target** (or imminent overlap at current Chaser X). Effective lookahead = `120 + requiredLateral × 1.75`. Side selection: primary clearance → one-step secondary threat → directional hysteresis (`16` px reversal advantage) → clearance → shorter move from path line.
+
+**Horizontal steering priority:** (1) obstacle safety / avoidance, (2) Player spatial path. When no threat is active, `resolveSafeFollowTargetX` holds current X if returning toward the path would re-enter a nearby envelope. Follow dead zone `10` px; smoothing `5.5` (path) / `8` (avoidance).
+
+Avoidance is visual steering only — no score/health/pressure changes, no Chaser gameplay collision.
+
+**Proximity model (natural target from hearts, then pressure closes the gap):**
+
+| Hearts | Baseline | Config |
+|--------|----------|--------|
+| 3 | SAFE | `CHASER_SAFE_GAP` `180` |
+| 2 | PRESSURE | `CHASER_PRESSURE_GAP` `128` |
+| 1 | DANGER (mandatory) | `CHASER_DANGER_GAP` `89` |
+
+`naturalTargetGap = clamp(baseline − chasePressure, CHASER_MIN_GAP, baseline)`. At 1 heart the baseline is DANGER (`89` → ~`25` px visible snow). Max-pressure clamp `CHASER_MIN_GAP` `80` preserves ~`16` px visible snow — never overlap.
+
+**Speed Boost escape:** While `speedBoostRef.isSpeedBoostActive`, **ChaserSystem** adds `CHASER_BOOST_ESCAPE_BONUS` (`90`) to the natural target only — **does not** clear `chasePressure`, heal, or change score/HP. Opening uses faster smoothing (`CHASER_BOOST_ESCAPE_SMOOTHING` `6`); when boost ends the bonus drops and catch-up uses normal `CHASER_GAP_SMOOTHING` `3.5` (no snap). Works at 1 heart (e.g. natural `89` + boost → temporary `179`). Collisions during boost still apply normal consequences to the natural target underneath.
+
+**Recovery:** After `CHASER_RECOVERY_DELAY_MS` without a new pressure hit, `chasePressure` decays at `CHASER_RECOVERY_PRESSURE_PER_SEC` so score-only hits do not permanently pin the chaser.
+
+**Shield:** Shielded obstacle hits apply **zero** chase pressure (HealthSystem returns before `applyChasePressure`).
+
+**Pause / game over:** Fixed updates skip while not `playing` — chaser freezes with the rest of simulation. **Play Again** resets pressure/recovery and snaps `currentGap` to intro (`128`); natural target becomes SAFE when hearts are full.
+
+**Version 1 limits:** No chaser ↔ obstacle / pickup / player **collision** (visual steering only), no pathfinding / AI, no catch / Game Over from the chaser. Only `currentHealth ≤ 0` ends the run.
+
+**Performance:** Mutable ref state only; no React/Zustand per frame; no allocations in `ChaserSystem.fixedUpdate` or `ChaserAvoidance` (indexed loops, primitive bounds); renderer is `React.memo` + Reanimated shared values.
 
 ## Coins
 
@@ -819,7 +869,7 @@ Pooled shield pickups and timed collision immunity — gameplay in **ShieldSyste
 3. **Collection:** Player screen AABB vs pickup screen rect (`scroll` + `camera`); on hit → deactivate slot, set `isShieldActive = true`, `remainingShieldMs = SHIELD_DURATION_MS`.
 4. **Despawn:** When `worldY - scrollOffsetY > viewportHeight + SHIELD_DESPAWN_MARGIN`, return uncollected slot to pool.
 5. **Duration:** `tickShieldDuration` each fixed update; when `remainingShieldMs` reaches 0, `consumeShieldEffect` clears the effect.
-6. **One-hit absorb:** After **HealthSystem** (same fixed step), if `isShieldActive` and `collisionRef.hasCollision`, **ShieldSystem** calls `consumeShieldEffect`. **HealthSystem** already marked the obstacle and started invulnerability when the shield blocked damage, so overlap on later fixed steps does not re-apply damage.
+6. **One-hit absorb:** After **HealthSystem** (same fixed step), if `isShieldActive` and `collisionRef.hasCollision`, **ShieldSystem** calls `consumeShieldEffect`. **HealthSystem** already marked the obstacle and started invulnerability when the shield blocked damage / score / chase pressure, so overlap on later fixed steps does not re-apply consequences.
 
 **Shield pickup rendering:**
 

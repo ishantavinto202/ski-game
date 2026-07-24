@@ -24,6 +24,8 @@ import { resetCoinActiveLifecycleDebug } from '../utils/coin-active-lifecycle-de
 import { GAME_CONFIG } from '../utils/GameConfig';
 import { resetDecorativeTreePoolInPlace } from './DecorativeTree';
 import { getGameplayFeedbackPool, resetGameplayFeedbackPool } from '../effects/GameplayFeedback';
+import { resetChaserState, snapChaserBehindPlayer } from './Chaser';
+import { resetChaserPathState, resolvePlayerWorldY } from './ChaserPath';
 import { clearGameOverCacheState } from '../ui/GameOverTypes';
 
 function resetGameStateRef(engine: GameEngine): void {
@@ -217,4 +219,26 @@ export function resetGame(engine: GameEngine): void {
   }
   resetGameOverCache(engine);
   resetGameplayFeedback(engine);
+  resetChaserVisual(engine);
+}
+
+function resetChaserVisual(engine: GameEngine): void {
+  resetChaserState(engine.chaserRef.current);
+  const player = engine.playerRef.current;
+  if (!player) {
+    return;
+  }
+  snapChaserBehindPlayer(
+    engine.chaserRef.current,
+    player.x,
+    player.y,
+    player.width,
+    engine.healthRef.current.currentHealth,
+  );
+  const playerCenterX = player.x + player.width * 0.5;
+  resetChaserPathState(
+    engine.chaserRef.current.path,
+    resolvePlayerWorldY(engine.worldRef.current.scrollOffsetY, player.y),
+    playerCenterX - GAME_CONFIG.CHASER_WIDTH * 0.5,
+  );
 }

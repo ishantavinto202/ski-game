@@ -2,6 +2,8 @@ export const SKI_GAME_COLORS = {
   snow: '#F4F9FF',
   playerPlaceholder: '#3D5A80',
   playerPlaceholderBorder: '#1D3557',
+  chaserPlaceholder: '#7F1D1D',
+  chaserPlaceholderBorder: '#450A0A',
   obstacleSmallRock: '#9CA3AF',
   obstacleLargeBoulder: '#4B5563',
   obstacleTree: '#15803D',

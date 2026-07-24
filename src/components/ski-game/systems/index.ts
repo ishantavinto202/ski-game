@@ -13,5 +13,6 @@ export { DifficultySystem, DIFFICULTY_SYSTEM_ID } from './DifficultySystem';
 export { GameStateSystem, GAME_STATE_SYSTEM_ID } from './GameStateSystem';
 export { ShieldSystem, SHIELD_SYSTEM_ID } from './ShieldSystem';
 export { SpeedBoostSystem, SPEED_BOOST_SYSTEM_ID } from './SpeedBoostSystem';
+export { ChaserSystem, CHASER_SYSTEM_ID } from './ChaserSystem';
 export { GameOverSystem, GAME_OVER_SYSTEM_ID } from './GameOverSystem';
 export { RestartSystem, RESTART_SYSTEM_ID, playAgain, resetGame } from './RestartSystem';

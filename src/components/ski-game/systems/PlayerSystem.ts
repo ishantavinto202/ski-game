@@ -1,4 +1,5 @@
 import { createPlayerForViewport } from '../entities/Player';
+import { snapChaserBehindPlayer } from '../entities/Chaser';
 import type { GameEngine } from '../engine/GameEngine';
 import type { GameSystem } from '../types';
 
@@ -36,7 +37,15 @@ export class PlayerSystem implements GameSystem {
       return;
     }
 
-    engine.playerRef.current = createPlayerForViewport(viewport.width, viewport.height);
+    const player = createPlayerForViewport(viewport.width, viewport.height);
+    engine.playerRef.current = player;
+    snapChaserBehindPlayer(
+      engine.chaserRef.current,
+      player.x,
+      player.y,
+      player.width,
+      engine.healthRef.current.currentHealth,
+    );
   }
 
   private handleViewportChange = (): void => {
