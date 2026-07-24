@@ -55,9 +55,9 @@ export const SkiGameViewport = memo(function SkiGameViewport() {
       {viewport ? <SnowTrailRenderer viewport={viewport} /> : null}
       {viewport ? <CollisionBurstRenderer viewport={viewport} /> : null}
       {viewport ? <ShieldShatterRenderer viewport={viewport} /> : null}
+      {playerSnapshot ? <ShieldBubbleRenderer player={playerSnapshot} /> : null}
       {playerSnapshot ? <PlayerRenderer player={playerSnapshot} /> : null}
       {viewport ? <GameplayFeedbackRenderer viewport={viewport} /> : null}
-      {playerSnapshot ? <ShieldBubbleRenderer player={playerSnapshot} /> : null}
       <Hud />
       <TouchControls />
       <PauseButton />

@@ -1,33 +1,32 @@
 import { memo, useEffect, useMemo } from 'react';
-import { StyleSheet } from 'react-native';
+import { Image, StyleSheet } from 'react-native';
 import Animated, { useAnimatedStyle, useSharedValue } from 'react-native-reanimated';
 
 import type { PlayerSnapshot } from '../entities/Player';
 import { useGameEngineContext } from '../engine/GameEngineContext';
-import { SKI_GAME_COLORS } from '../utils/colors';
 
-const SHIELD_BUBBLE_RADIUS_TO_PLAYER_WIDTH = 1.35;
+const SHIELD_BUBBLE_TEXTURE = require('../../../../assets/assets/shield-bubble.png') as number;
+
+/** Visual bubble width relative to player width (gameplay dimensions unchanged). */
+const SHIELD_BUBBLE_WIDTH_TO_PLAYER_WIDTH = 1.9;
+/** Source art aspect ratio: shield-bubble.png is 400×492. */
+const SHIELD_BUBBLE_SOURCE_HEIGHT_TO_WIDTH = 492 / 400;
 const SHIELD_BUBBLE_OPACITY = 1;
-const SHIELD_BUBBLE_BORDER_WIDTH = 4;
-const SHIELD_GLOW_RING_INSET = 6;
-const SHIELD_GLOW_RING_BORDER_WIDTH = 3;
 const SHIELD_PULSE_PERIOD_MS = 1000;
 const SHIELD_PULSE_SCALE_MAX = 1.08;
 const TWO_PI = Math.PI * 2;
 
 const bubbleStyles = StyleSheet.create({
-  wrapper: {
+  positionWrapper: {
     position: 'absolute',
   },
-  glowRing: {
-    position: 'absolute',
-    backgroundColor: 'transparent',
-    borderColor: SKI_GAME_COLORS.shieldBubbleGlow,
+  pulseContainer: {
+    width: '100%',
+    height: '100%',
   },
-  bubble: {
-    position: 'absolute',
-    backgroundColor: SKI_GAME_COLORS.shieldBubbleFill,
-    borderColor: SKI_GAME_COLORS.shieldBubbleBorder,
+  image: {
+    width: '100%',
+    height: '100%',
   },
 });
 
@@ -40,72 +39,45 @@ export const ShieldBubbleRenderer = memo(function ShieldBubbleRenderer({
 }: ShieldBubbleRendererProps) {
   const engine = useGameEngineContext();
   const playerX = useSharedValue(player.x);
-  const leanAngle = useSharedValue(0);
   const isShieldActive = useSharedValue(0);
   const pulseScale = useSharedValue(1);
 
   const layout = useMemo(() => {
-    const diameter = player.width * SHIELD_BUBBLE_RADIUS_TO_PLAYER_WIDTH * 2;
-    const offsetX = (player.width - diameter) * 0.5;
-    const offsetY = (player.height - diameter) * 0.5;
-    const glowDiameter = diameter + SHIELD_GLOW_RING_INSET * 2;
+    const bubbleWidth = player.width * SHIELD_BUBBLE_WIDTH_TO_PLAYER_WIDTH;
+    const bubbleHeight = bubbleWidth * SHIELD_BUBBLE_SOURCE_HEIGHT_TO_WIDTH;
+    // player.x / player.y are top-left (see createPlayerForViewport).
+    const playerCenterOffsetX = player.width * 0.5;
+    const playerCenterOffsetY = player.height * 0.5;
     return {
-      wrapperTop: player.y + offsetY - SHIELD_GLOW_RING_INSET,
-      wrapperOffsetX: offsetX - SHIELD_GLOW_RING_INSET,
-      diameter,
-      borderRadius: diameter * 0.5,
-      glowDiameter,
-      glowBorderRadius: glowDiameter * 0.5,
-      bubbleInset: SHIELD_GLOW_RING_INSET,
+      bubbleWidth,
+      bubbleHeight,
+      bubbleTop: player.y + playerCenterOffsetY - bubbleHeight * 0.5,
+      bubbleLeftOffset: playerCenterOffsetX - bubbleWidth * 0.5,
     };
   }, [player.height, player.width, player.y]);
 
-  const staticWrapperStyle = useMemo(
+  const staticPositionStyle = useMemo(
     () => ({
-      top: layout.wrapperTop,
-      width: layout.glowDiameter,
-      height: layout.glowDiameter,
+      top: layout.bubbleTop,
+      width: layout.bubbleWidth,
+      height: layout.bubbleHeight,
     }),
-    [layout.glowDiameter, layout.wrapperTop],
+    [layout.bubbleHeight, layout.bubbleTop, layout.bubbleWidth],
   );
 
-  const staticGlowStyle = useMemo(
-    () => ({
-      left: 0,
-      top: 0,
-      width: layout.glowDiameter,
-      height: layout.glowDiameter,
-      borderRadius: layout.glowBorderRadius,
-      borderWidth: SHIELD_GLOW_RING_BORDER_WIDTH,
-    }),
-    [layout.glowBorderRadius, layout.glowDiameter],
-  );
-
-  const staticBubbleStyle = useMemo(
-    () => ({
-      left: layout.bubbleInset,
-      top: layout.bubbleInset,
-      width: layout.diameter,
-      height: layout.diameter,
-      borderRadius: layout.borderRadius,
-      borderWidth: SHIELD_BUBBLE_BORDER_WIDTH,
-    }),
-    [layout.borderRadius, layout.bubbleInset, layout.diameter],
-  );
+  const imageStyle = useMemo(() => bubbleStyles.image, []);
 
   useEffect(() => {
     const livePlayer = engine.playerRef.current;
     if (livePlayer) {
       playerX.value = livePlayer.x;
     }
-    leanAngle.value = engine.playerFeelRef.current.leanAngle;
 
     return engine.onFrame(() => {
       const currentPlayer = engine.playerRef.current;
       if (currentPlayer) {
         playerX.value = currentPlayer.x;
       }
-      leanAngle.value = engine.playerFeelRef.current.leanAngle;
 
       const shieldActive = engine.shieldRef.current.isShieldActive;
       isShieldActive.value = shieldActive ? 1 : 0;
@@ -120,21 +92,29 @@ export const ShieldBubbleRenderer = memo(function ShieldBubbleRenderer({
       const pulseNormalized = (1 - Math.cos(TWO_PI * phase)) * 0.5;
       pulseScale.value = 1 + (SHIELD_PULSE_SCALE_MAX - 1) * pulseNormalized;
     });
-  }, [engine, isShieldActive, leanAngle, playerX, pulseScale]);
+  }, [engine, isShieldActive, playerX, pulseScale]);
 
-  const animatedWrapperStyle = useAnimatedStyle(() => ({
-    left: playerX.value + layout.wrapperOffsetX,
+  const animatedPositionStyle = useAnimatedStyle(() => ({
+    left: playerX.value + layout.bubbleLeftOffset,
     opacity: isShieldActive.value > 0 ? SHIELD_BUBBLE_OPACITY : 0,
-    transform: [{ rotate: `${leanAngle.value}deg` }, { scale: pulseScale.value }],
+  }));
+
+  const animatedPulseStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: pulseScale.value }],
   }));
 
   return (
     <Animated.View
-      style={[bubbleStyles.wrapper, staticWrapperStyle, animatedWrapperStyle]}
+      style={[bubbleStyles.positionWrapper, staticPositionStyle, animatedPositionStyle]}
       pointerEvents="none"
     >
-      <Animated.View style={[bubbleStyles.glowRing, staticGlowStyle]} pointerEvents="none" />
-      <Animated.View style={[bubbleStyles.bubble, staticBubbleStyle]} pointerEvents="none" />
+      <Animated.View style={[bubbleStyles.pulseContainer, animatedPulseStyle]} pointerEvents="none">
+        <Image
+          source={SHIELD_BUBBLE_TEXTURE}
+          style={imageStyle}
+          resizeMode="contain"
+        />
+      </Animated.View>
     </Animated.View>
   );
 });

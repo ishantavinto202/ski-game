@@ -293,7 +293,7 @@ Pause control and overlay — reads `gameStateRef` only; transitions go through 
 
 **Viewport layer order (bottom → top):**
 
-1. **WorldRenderer** → **ObstacleRenderer** → **CoinRenderer** → **SpeedBoostRenderer** → **ShieldPickupRenderer** → **SnowTrailRenderer** → **CollisionBurstRenderer** → **ShieldShatterRenderer** → **PlayerRenderer** → **ShieldBubbleRenderer**
+1. **WorldRenderer** → **ObstacleRenderer** → **CoinRenderer** → **SpeedBoostRenderer** → **ShieldPickupRenderer** → **SnowTrailRenderer** → **CollisionBurstRenderer** → **ShieldShatterRenderer** → **ShieldBubbleRenderer** → **PlayerRenderer**
 2. **Hud**
 3. **TouchControls**
 4. **PauseButton** (playing only)
@@ -327,7 +327,7 @@ Detects zero health during play and shows a summary overlay.
 5. **ShieldPickupRenderer**
 6. **SnowTrailRenderer** (behind player)
 7. **CollisionBurstRenderer** / **ShieldShatterRenderer** (impact VFX; behind player)
-8. **PlayerRenderer** then **ShieldBubbleRenderer** (when player mounted; bubble above skier, translucent)
+8. **ShieldBubbleRenderer** then **PlayerRenderer** (when player mounted; bubble behind skier so the player sits inside the bubble art)
 6. **PlayerRenderer**
 7. **Hud**
 8. **TouchControls**
@@ -603,7 +603,7 @@ Pooled obstacles in world space (**ObstacleSystem**) with separate presentation 
 
 **Rendering flow:**
 
-1. **SkiGameViewport** layer order: **WorldRenderer** → **ObstacleRenderer** → **CoinRenderer** → **SpeedBoostRenderer** → **ShieldPickupRenderer** → **SnowTrailRenderer** → **CollisionBurstRenderer** → **ShieldShatterRenderer** → **PlayerRenderer** → **GameplayFeedbackRenderer** → **ShieldBubbleRenderer** → **Hud** → **TouchControls** → **PauseButton** → **PauseOverlay** → **GameOverOverlay**.
+1. **SkiGameViewport** layer order: **WorldRenderer** → **ObstacleRenderer** → **CoinRenderer** → **SpeedBoostRenderer** → **ShieldPickupRenderer** → **SnowTrailRenderer** → **CollisionBurstRenderer** → **ShieldShatterRenderer** → **ShieldBubbleRenderer** → **PlayerRenderer** → **GameplayFeedbackRenderer** → **Hud** → **TouchControls** → **PauseButton** → **PauseOverlay** → **GameOverOverlay**.
 2. Each frame, `engine.onFrame` updates shared values per fixed slot index (`obstacleRef.obstacles[i]`).
 3. Screen rect: center-anchored world position minus `worldRef.scrollOffsetY` and `cameraRef.offsetX`.
 4. Culled if outside viewport ± `OBSTACLE_RENDER_MARGIN` (`opacity` 0); inactive slots hidden.
@@ -798,7 +798,7 @@ Pooled shield pickups and timed collision immunity — gameplay in **ShieldSyste
 | `systems/ShieldSystem.ts` | Spawn intake, AABB collection, despawn, effect countdown, one-hit consume on obstacle collision, `engine.shieldRef` |
 | `utils/shield-render.ts` | Viewport culling helpers |
 | `ui/ShieldPickupRenderer.tsx` | Fixed `MAX_SHIELDS` memo slots; Reanimated atlas sprite (~12 FPS loop from `shield-sprite.json` / `shield-sprite.png`) |
-| `ui/ShieldBubbleRenderer.tsx` | Protective bubble on player while `isShieldActive` (Reanimated pulse) |
+| `ui/ShieldBubbleRenderer.tsx` | Active shield art (`shield-bubble.png`) on player while `isShieldActive` (Reanimated pulse + lean) |
 
 **GameConfig (shield):**
 
@@ -831,7 +831,7 @@ Pooled shield pickups and timed collision immunity — gameplay in **ShieldSyste
 
 **Shield bubble (presentation):**
 
-1. **ShieldBubbleRenderer** mounts **above** **PlayerRenderer** (translucent bubble over the skier).
+1. **ShieldBubbleRenderer** mounts **below** **PlayerRenderer** (`assets/assets/shield-bubble.png`, ~`player.width × 1.9` wide with 400:492 aspect; centered on player screen center; pulse only — no lean).
 2. Each frame, `engine.onFrame` reads `shieldRef.isShieldActive`, `playerRef.x`, and `playerFeelRef.leanAngle` (same sync as **PlayerRenderer**).
 3. Circle diameter unchanged: **`2 × 1.35 × PLAYER_WIDTH`**, centered on the player placeholder.
 4. **Fill** ~40% sky-blue alpha; **4 px** bright border (lighter than fill); optional **outer glow ring** (semi-transparent border, no blur).
