@@ -21,3 +21,13 @@ export type { GameOverOverlayProps, GameOverActionHandler } from './GameOverType
 export { readGameOverSummaryFromRefs } from './GameOverTypes';
 export { hudStyles, HUD_HORIZONTAL_INSET, HUD_TOP_OFFSET } from './HudStyles';
 export type { HudMetricValues, HudSafeAreaLayout } from './HudTypes';
+export { ScoringGuideOverlay } from './ScoringGuideOverlay';
+export { ScoringGuideInfoButton } from './ScoringGuideInfoButton';
+export { ScoringGuideRow } from './ScoringGuideRow';
+export { COLLECTIBLE_GUIDE_ITEMS, OBSTACLE_GUIDE_ITEMS } from './scoring-guide-data';
+export type {
+  ScoringGuideItem,
+  ScoringGuideOverlayProps,
+  ScoringGuideInfoButtonProps,
+  ScoringGuideEffectTone,
+} from './ScoringGuideTypes';
