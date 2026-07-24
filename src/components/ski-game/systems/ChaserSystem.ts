@@ -12,7 +12,6 @@ import {
   resolvePathFollowX,
   resolvePlayerWorldY,
 } from '../entities/ChaserPath';
-import type { ChaserState } from '../types/ChaserTypes';
 import type { GameSystem } from '../types';
 import { GAME_CONFIG } from '../utils/GameConfig';
 
@@ -27,8 +26,8 @@ function resolveLiveFollowX(playerX: number, playerWidth: number): number {
 }
 
 /**
- * Smooth chase-pressure follower — no collision, AI, or catch condition.
- * Reads player + health; chasePressure is written by HealthSystem on accepted hits.
+ * Chaser follower — vertical gap from health, horizontal X from player path,
+ * obstacle avoidance temporarily overrides horizontal steering only.
  */
 export class ChaserSystem implements GameSystem {
   readonly id = CHASER_SYSTEM_ID;
@@ -79,13 +78,9 @@ export class ChaserSystem implements GameSystem {
     const deltaSeconds = fixedDeltaMs / 1000;
     const scrollOffsetY = engine.worldRef.current.scrollOffsetY;
 
-    chaser.timeSinceLastPressureMs += fixedDeltaMs;
-    this.tickPressureRecovery(chaser, deltaSeconds);
-
     const isSpeedBoostActive = engine.speedBoostRef.current.isSpeedBoostActive;
     chaser.targetGap = resolveChaserFinalTargetGap(
       health.currentHealth,
-      chaser.chasePressure,
       isSpeedBoostActive,
     );
 
@@ -161,22 +156,5 @@ export class ChaserSystem implements GameSystem {
     }
 
     chaser.x = nextX;
-  }
-
-  private tickPressureRecovery(chaser: ChaserState, deltaSeconds: number): void {
-    if (chaser.chasePressure <= 0) {
-      chaser.chasePressure = 0;
-      return;
-    }
-
-    if (chaser.timeSinceLastPressureMs < GAME_CONFIG.CHASER_RECOVERY_DELAY_MS) {
-      return;
-    }
-
-    chaser.chasePressure -=
-      GAME_CONFIG.CHASER_RECOVERY_PRESSURE_PER_SEC * deltaSeconds;
-    if (chaser.chasePressure < 0) {
-      chaser.chasePressure = 0;
-    }
   }
 }

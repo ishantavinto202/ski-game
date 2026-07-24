@@ -187,7 +187,13 @@ function appendSequentialPopulationPattern(
       logCabinEnqueued();
     }
 
-    const written = enqueueSpawnPatternRequests(spawnState, pattern, originY, centerLane);
+    const written = enqueueSpawnPatternRequests(
+      spawnState,
+      pattern,
+      originY,
+      centerLane,
+      engine.obstacleRef.current,
+    );
     if (written <= 0) {
       continue;
     }

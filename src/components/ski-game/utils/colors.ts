@@ -24,7 +24,7 @@ export const SKI_GAME_COLORS = {
   shieldBubbleBorder: 'rgba(186, 230, 253, 0.95)',
   shieldBubbleGlow: 'rgba(14, 165, 233, 0.45)',
   shieldDurationBarFill: '#14B8A6',
-  snowTrailDot: '#9ECAE8',
+  skiTrackStroke: '#A8CCE6',
   collisionBurstFragment: '#B8E0F5',
   shieldShatterFragment: '#67D4F5',
 } as const;

@@ -1,5 +1,13 @@
 import type { ImageSourcePropType } from 'react-native';
 
+import {
+  cabinAsset,
+  largeBoulderAsset,
+  smallRockAsset,
+  treeStumpAsset,
+  treeVisualAssets,
+  woodenFenceAsset,
+} from '../utils/obstacle-assets';
 import { GAME_CONFIG } from '../utils/GameConfig';
 import {
   COIN_COLLECT_SCORE,
@@ -9,12 +17,8 @@ import {
 
 import type { ScoringGuideItem } from './ScoringGuideTypes';
 
-const smallRockAsset = require('../../../../assets/obstacles/Small Rock.png') as number;
-const largeBoulderAsset = require('../../../../assets/obstacles/Big Rock.png') as number;
-const treeStumpAsset = require('../../../../assets/obstacles/Stump.png') as number;
-const cabinAsset = require('../../../../assets/obstacles/cabin.png') as number;
-const woodenFenceAsset = require('../../../../assets/obstacles/Fence.png') as number;
-const treeGuideAsset = require('../../../../assets/obstacles/Big Tree (Tree 1).png') as number;
+/** Representative tree visual for the guide (all tree PNGs share one gameplay entry). */
+const treeGuideAsset = treeVisualAssets[0];
 
 const COIN_ATLAS = require('../../../../assets/assets/Coin Animations/texture.png') as number;
 const SHIELD_ATLAS =

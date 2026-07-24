@@ -2,7 +2,7 @@ import type { GameEngine } from '../engine/GameEngine';
 import { resetCollisionState } from '../types/CollisionTypes';
 import type { GameSystem } from '../types';
 import { aabbIntersectsWithPadding } from '../utils/collision';
-import { obstacleWorldToScreenRect } from '../utils/obstacle-render';
+import { getObstacleCollisionScreenRect } from '../utils/obstacle-collision';
 import { GAME_CONFIG } from '../utils/GameConfig';
 
 export const COLLISION_SYSTEM_ID = 'collision-system';
@@ -54,7 +54,7 @@ export class CollisionSystem implements GameSystem {
         continue;
       }
 
-      const rect = obstacleWorldToScreenRect(obstacle, scrollOffsetY, cameraOffsetX);
+      const rect = getObstacleCollisionScreenRect(obstacle, scrollOffsetY, cameraOffsetX);
 
       const hit = aabbIntersectsWithPadding(
         playerLeft,

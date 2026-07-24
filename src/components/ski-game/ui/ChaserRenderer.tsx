@@ -29,25 +29,34 @@ export const ChaserRenderer = memo(function ChaserRenderer() {
   const engine = useGameEngineContext();
   const left = useSharedValue(0);
   const top = useSharedValue(0);
+  const opacity = useSharedValue(0);
 
   const bodyStyle = useMemo(() => placeholderStyles.body, []);
   const sizeStyle = useMemo(() => staticBodyStyle, []);
 
   useEffect(() => {
-    const chaser = engine.chaserRef.current;
-    left.value = chaser.x;
-    top.value = chaser.y;
+    const syncChaserTransform = (): void => {
+      const player = engine.playerRef.current;
+      if (!player) {
+        opacity.value = 0;
+        return;
+      }
 
-    return engine.onFrame(() => {
       const live = engine.chaserRef.current;
       left.value = live.x;
       top.value = live.y;
-    });
-  }, [engine, left, top]);
+      opacity.value = 1;
+    };
+
+    syncChaserTransform();
+
+    return engine.onFrame(syncChaserTransform);
+  }, [engine, left, opacity, top]);
 
   const animatedStyle = useAnimatedStyle(() => ({
     left: left.value,
     top: top.value,
+    opacity: opacity.value,
   }));
 
   return (

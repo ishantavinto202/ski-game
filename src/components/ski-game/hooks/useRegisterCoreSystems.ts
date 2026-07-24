@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react';
 
 import type { GameEngine } from '../engine/GameEngine';
 import { CameraSystem } from '../systems/CameraSystem';
+import { SkiTrackSystem } from '../systems/SkiTrackSystem';
 import { InputSystem } from '../systems/InputSystem';
 import { MovementSystem } from '../systems/MovementSystem';
 import { PlayerFeelSystem } from '../systems/PlayerFeelSystem';
@@ -39,6 +40,7 @@ function createCoreSystems(): GameSystem[] {
     new MovementSystem(),
     new PlayerFeelSystem(),
     new CameraSystem(),
+    new SkiTrackSystem(),
     new SpawnManager(),
     new ObstacleSystem(),
   ];

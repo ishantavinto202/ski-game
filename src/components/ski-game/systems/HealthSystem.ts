@@ -6,7 +6,6 @@ import {
   spawnGameplayFeedbackForCoinCollect,
   spawnGameplayFeedbackForConsequence,
 } from '../effects/GameplayFeedback';
-import { applyChasePressure } from '../entities/Chaser';
 import { applyScoreDelta, resolveObstacleConsequence } from '../utils/score-consequences';
 
 export const HEALTH_SYSTEM_ID = 'health-system';
@@ -82,8 +81,6 @@ export class HealthSystem implements GameSystem {
       health.invulnerabilityRemainingMs = GAME_CONFIG.PLAYER_INVULNERABILITY_MS;
       health.isInvulnerable = true;
     }
-
-    applyChasePressure(engine.chaserRef.current, consequence.chasePressure);
 
     spawnGameplayFeedbackForConsequence(
       engine,

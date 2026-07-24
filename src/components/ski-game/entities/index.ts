@@ -2,9 +2,7 @@ export { Player, createPlayerForViewport, type PlayerSnapshot } from './Player';
 export {
   createInitialChaserState,
   resetChaserState,
-  applyChasePressure,
-  resolveChaserBaselineGap,
-  resolveChaserNaturalTargetGap,
+  resolveChaserHealthTargetGap,
   resolveChaserFinalTargetGap,
   resolveChaserEdgeToEdgeGap,
   snapChaserBehindPlayer,

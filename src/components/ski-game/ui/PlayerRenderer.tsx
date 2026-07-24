@@ -43,7 +43,7 @@ export const PlayerRenderer = memo(function PlayerRenderer({ player }: PlayerRen
   const engine = useGameEngineContext();
   const playerX = useSharedValue(player.x);
   const leanAngle = useSharedValue(0);
-  const bodyOpacity = useSharedValue(1);
+  const bodyOpacity = useSharedValue(0);
 
   const staticBodyStyle = useMemo(
     () => ({
@@ -58,14 +58,21 @@ export const PlayerRenderer = memo(function PlayerRenderer({ player }: PlayerRen
     const livePlayer = engine.playerRef.current;
     if (livePlayer) {
       playerX.value = livePlayer.x;
+      bodyOpacity.value = resolveInvulnerabilityBlinkOpacity(
+        engine.healthRef.current.isInvulnerable,
+        engine.healthRef.current.invulnerabilityRemainingMs,
+      );
     }
     leanAngle.value = engine.playerFeelRef.current.leanAngle;
 
     return engine.onFrame(() => {
       const currentPlayer = engine.playerRef.current;
-      if (currentPlayer) {
-        playerX.value = currentPlayer.x;
+      if (!currentPlayer) {
+        bodyOpacity.value = 0;
+        return;
       }
+
+      playerX.value = currentPlayer.x;
       leanAngle.value = engine.playerFeelRef.current.leanAngle;
 
       const health = engine.healthRef.current;

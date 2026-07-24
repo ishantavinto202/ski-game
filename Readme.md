@@ -250,7 +250,7 @@ stateDiagram-v2
 
 **Transition ownership:** Only **GameStateSystem** applies transitions via `applyPendingGameTransition` during its `fixedUpdate`. Gameplay systems must not assign `currentState`; they call the request helpers when needed (**GameOverSystem** → `requestGameOver` when health reaches 0 while `playing`).
 
-**Initial boot:** **SkiGameRoot** `useEffect` requests `ready → playing` on session start. **GameStateSystem** applies the transition on the next **GameLoop** tick; gameplay fixed steps then run as usual. Boot logic lives only in **SkiGameRoot** (not **GameLoop**, **useGameViewport**, or **useGameLoop**).
+**Initial boot:** **SkiGameRoot** `useEffect` requests `ready → playing` on session start. **GameStateSystem** applies the transition on the next **GameLoop** tick; gameplay fixed steps then run as usual. Boot logic lives only in **SkiGameRoot** (not **GameLoop**, **useGameViewport**, or **useGameLoop**). **GameLoop** starts only when `isSimulationReady` (`viewport !== null && playerSnapshot !== null`) so simulation never runs before the measured viewport and player spawn exist. **ChaserRenderer** / **PlayerRenderer** mount only after `playerSnapshot` is set; shared values start at `opacity = 0` and become visible only after the first valid engine sync.
 
 **Update flow (each animation frame):**
 
@@ -293,7 +293,7 @@ Pause control and overlay — reads `gameStateRef` only; transitions go through 
 
 **Viewport layer order (bottom → top):**
 
-1. **WorldRenderer** → **ObstacleRenderer** → **CoinRenderer** → **SpeedBoostRenderer** → **ShieldPickupRenderer** → **SnowTrailRenderer** → **CollisionBurstRenderer** → **ShieldShatterRenderer** → **ChaserRenderer** → **ShieldBubbleRenderer** → **PlayerRenderer**
+1. **WorldRenderer** → **SkiTrackRenderer** → **ObstacleRenderer** → **CoinRenderer** → **SpeedBoostRenderer** → **ShieldPickupRenderer** → **CollisionBurstRenderer** → **ShieldShatterRenderer** → **ChaserRenderer** → **ShieldBubbleRenderer** → **PlayerRenderer**
 2. **Hud**
 3. **TouchControls**
 4. **PauseButton** (playing only)
@@ -321,19 +321,20 @@ Detects zero health during play and shows a summary overlay.
 **Full viewport layer order (bottom → top):**
 
 1. **WorldRenderer**
-2. **ObstacleRenderer**
-3. **CoinRenderer**
-4. **SpeedBoostRenderer**
-5. **ShieldPickupRenderer**
-6. **SnowTrailRenderer** (behind player)
+2. **SkiTrackRenderer** (carved ski tracks on snow)
+3. **ObstacleRenderer**
+4. **CoinRenderer**
+5. **SpeedBoostRenderer**
+6. **ShieldPickupRenderer**
 7. **CollisionBurstRenderer** / **ShieldShatterRenderer** (impact VFX; behind player)
 8. **ChaserRenderer** (chase-pressure follower; behind shield bubble / player)
 9. **ShieldBubbleRenderer** then **PlayerRenderer** (when player mounted; bubble behind skier so the player sits inside the bubble art)
-10. **Hud**
-11. **TouchControls**
-12. **PauseButton**
-13. **PauseOverlay**
-14. **GameOverOverlay**
+10. **GameplayFeedbackRenderer** (floating score/heart text)
+11. **Hud**
+12. **TouchControls**
+13. **PauseButton**
+14. **PauseOverlay**
+15. **GameOverOverlay**
 
 While `game_over`, simulation fixed steps stop (same as pause); `notifyFrame` keeps the last frame visible under the overlay.
 
@@ -481,6 +482,10 @@ World-space spawn **requests** only — no entities, rendering, or collision. St
 | `PATTERN_READABILITY_GAP` | `48` | Minimum clear world Y between the previous pattern’s top and the next pattern’s trailing edge |
 | `MAX_PATTERNS_PER_FIXED_STEP` | `3` | Cap on pattern appends per simulation step |
 | `SPAWN_VALIDATION_PATTERN_MAX_RETRIES` | `3` | Upstream origin bumps when a pattern footprint is occupied |
+| `OBSTACLE_PASSAGE_SAFETY_MARGIN` | `14` | Added to player collision width for minimum horizontal passable gap between footprints |
+| `OBSTACLE_VERTICAL_SAFETY_MARGIN` | `12` | Added to player collision height for minimum vertical passable gap between footprints |
+| `MAX_OBSTACLE_PLACEMENT_ATTEMPTS` | `4` | Deterministic lane/X corrections per pattern obstacle before skip |
+| `DEBUG_OBSTACLE_SPACING` | `false` | Log rejected/repositioned obstacle spawn candidates (dev only) |
 | `SPAWN_VALIDATION_PICKUP_MAX_SEARCH_ATTEMPTS` | `288` | Hard cap on occupancy probes per pickup placement search |
 | `SPAWN_PICKUP_WORLD_Y_SEARCH_BANDS` | `36` | Upstream Y bands scanned from pickup base Y (× retry step) |
 | `SPAWN_PICKUP_WORLD_Y_RETRY_STEP` | `36` | World Y offset between pickup placement bands |
@@ -508,7 +513,7 @@ Every fixed step while lanes are valid, **SpawnManager** extends the mountain **
 5. Cap patterns per tick so a single step cannot exhaust the buffer; resume on the next tick if the pending queue is full.
 6. Every fourth pattern is forced to **`single_rock`** centered on the middle lane so at least one navigable route remains.
 
-**Spawn validation:** Before any pattern or pickup is queued, **`spawn-validation.ts`** builds a **`SpawnFootprint`** (lanes + world X/Y from existing geometry — pattern entries use **`OBSTACLE_VARIANT_DIMENSIONS`**, not duplicated metadata). **Obstacle patterns:** **`findClearPatternOriginY`** accepts an origin only when **`isSpawnAreaOccupied`** is false (active **`obstacleRef`** slots and pending **`obstacle`** **SpawnRequest** rows) **and** **`isPickupAreaOccupied`** is false (active coin/shield/speed-boost pools plus pending pickup **SpawnRequest** rows, raw footprints — no shield clearance inset). Patterns use validation Y-step retries inside **`findClearPatternOriginY`**; if a pattern still does not fit, **`spawn-population.ts`** discards only that pick and tries another weighted pattern (selection retries). If nothing fits after selection attempts, **`nextPatternOriginY`** advances upstream. **Pickups:** **`findClearPickupSpawn`** scans every lane at the base lookahead Y, then repeats for each upstream Y band (`SPAWN_PICKUP_WORLD_Y_SEARCH_BANDS` × `SPAWN_PICKUP_WORLD_Y_RETRY_STEP`), stopping at the first clear footprint or **`SPAWN_VALIDATION_PICKUP_MAX_SEARCH_ATTEMPTS`** probes (still obstacle-safe, lane-bound, never behind the player). Decorative edge trees skip a slot if occupied (no retries). No allocations in **`fixedUpdate`**.
+**Spawn validation:** Before any pattern or pickup is queued, **`spawn-validation.ts`** builds a **`SpawnFootprint`** (lanes + world X/Y from existing geometry — pattern entries use **`OBSTACLE_VARIANT_DIMENSIONS`**, not duplicated metadata). **Obstacle patterns:** **`findClearPatternOriginY`** accepts an origin only when **`isSpawnAreaOccupied`** is false (active **`obstacleRef`** slots and pending **`obstacle`** **SpawnRequest** rows) **and** **`isPickupAreaOccupied`** is false (active coin/shield/speed-boost pools plus pending pickup **SpawnRequest** rows, raw footprints — no shield clearance inset). Patterns use validation Y-step retries inside **`findClearPatternOriginY`**; if a pattern still does not fit, **`spawn-population.ts`** discards only that pick and tries another weighted pattern (selection retries). If nothing fits after selection attempts, **`nextPatternOriginY`** advances upstream. **Per-obstacle spacing:** After an origin is chosen, **`enqueueSpawnPatternRequests`** validates each **`PatternObstacle`** with **`utils/obstacle-spacing.ts`** before writing a **SpawnRequest**. Validation uses **`OBSTACLE_VARIANT_DIMENSIONS`** gameplay footprints (not PNG canvas sizes). Minimum passable gaps are derived from the player collision body: horizontal gap ≥ **`PLAYER_WIDTH − 2×PLAYER_COLLISION_PADDING + OBSTACLE_PASSAGE_SAFETY_MARGIN`** (default **50 px**); vertical gap ≥ **`PLAYER_HEIGHT − 2×PLAYER_COLLISION_PADDING + OBSTACLE_VERTICAL_SAFETY_MARGIN`** (default **68 px**) when footprints share horizontal overlap. Each candidate is checked against active **`obstacleRef`** slots (Y-band cull), pending obstacle **SpawnRequest** rows, and obstacles already accepted in the same pattern expansion. Up to **`MAX_OBSTACLE_PLACEMENT_ATTEMPTS`** deterministic lane shifts (original, ±1 lane, ±2 lane) are tried before that individual obstacle is skipped — the pattern is not cancelled. Set **`DEBUG_OBSTACLE_SPACING`** to log rejections/repositions. **Pickups:** **`findClearPickupSpawn`** scans every lane at the base lookahead Y, then repeats for each upstream Y band (`SPAWN_PICKUP_WORLD_Y_SEARCH_BANDS` × `SPAWN_PICKUP_WORLD_Y_RETRY_STEP`), stopping at the first clear footprint or **`SPAWN_VALIDATION_PICKUP_MAX_SEARCH_ATTEMPTS`** probes (still obstacle-safe, lane-bound, never behind the player). Decorative edge trees skip a slot if occupied (no retries). No allocations in **`fixedUpdate`**.
 
 **Temporary cabin debug:** **`utils/cabin-debug.ts`** (`CABIN_DEBUG_ENABLED`) logs `[CABIN]` events for patterns containing a cabin through population, enqueue, **ObstacleSystem**, and **ObstacleRenderer**; **`logCabinDebugSummary()`** runs on game over. Remove when done investigating.
 
@@ -563,8 +568,9 @@ Pooled obstacles in world space (**ObstacleSystem**) with separate presentation 
 | `types/ObstacleTypes.ts` | `ObstacleVariant`, `ObstacleRecord`, `ObstaclePoolState`, voxel-ready dimensions |
 | `entities/Obstacle.ts` | Pool factory, activate/deactivate, weighted variant picker (LCG, no alloc) |
 | `systems/ObstacleSystem.ts` | Spawn intake, despawn below viewport, `engine.obstacleRef` lifecycle only |
-| `ui/ObstacleRenderer.tsx` | Fixed `MAX_OBSTACLES` memo slots; Reanimated placeholders (no React state) |
+| `ui/ObstacleRenderer.tsx` | Fixed `MAX_OBSTACLES` memo slots; Reanimated placeholders + PNG assets (no React state) |
 | `utils/obstacle-render.ts` | World → screen transform, viewport culling |
+| `utils/obstacle-assets.ts` | Static obstacle PNG registry, source metadata, visual layout (render-only) |
 
 **GameConfig (obstacles):**
 
@@ -573,12 +579,13 @@ Pooled obstacles in world space (**ObstacleSystem**) with separate presentation 
 | `MAX_OBSTACLES` | `64` | Pooled slots (gameplay + render views) |
 | `OBSTACLE_DESPAWN_MARGIN` | `48` | Px below viewport bottom before pool reuse |
 | `OBSTACLE_RENDER_MARGIN` | `64` | Culling padding around viewport for draw |
-| `SMALL_ROCK_SIZE` | `32×28` | Placeholder footprint (px) |
-| `LARGE_BOULDER_SIZE` | `60×54` | |
-| `TREE_SIZE` | `48×72` | |
-| `TREE_STUMP_SIZE` | `34×30` | |
-| `CABIN_SIZE` | `82×74` | |
-| `WOODEN_FENCE_SIZE` | `72×22` | |
+| `OBSTACLE_ASSET_SCALE` | `1.45` | Environment obstacle render + collision footprint multiplier (design base × scale) |
+| `SMALL_ROCK_SIZE` | `32×28` | Design-base footprint (px); runtime **`46.4×40.6`** |
+| `LARGE_BOULDER_SIZE` | `60×54` | Design base; runtime **`87×78.3`** |
+| `TREE_SIZE` | `48×72` | Design base; runtime **`69.6×104.4`** |
+| `TREE_STUMP_SIZE` | `34×30` | Design base; runtime **`49.3×43.5`** |
+| `CABIN_SIZE` | `82×74` | Design base; runtime **`118.9×107.3`** |
+| `WOODEN_FENCE_SIZE` | `72×22` | Design base; runtime **`104.4×31.9`** |
 | `SMALL_ROCK_SPAWN_WEIGHT` | `40` | Weighted random variant |
 | `LARGE_BOULDER_SPAWN_WEIGHT` | `20` | |
 | `TREE_SPAWN_WEIGHT` | `15` | |
@@ -586,9 +593,21 @@ Pooled obstacles in world space (**ObstacleSystem**) with separate presentation 
 | `CABIN_SPAWN_WEIGHT` | `5` | |
 | `WOODEN_FENCE_SPAWN_WEIGHT` | `5` | |
 
-**Variants:** `small_rock`, `large_boulder`, `tree`, `tree_stump`, `cabin`, `wooden_fence` — sizes from `GameConfig` via `OBSTACLE_VARIANT_DIMENSIONS`; collision and render use each slot’s `width` / `height`.
+**Variants:** `small_rock`, `large_boulder`, `tree`, `tree_stump`, `cabin`, `wooden_fence` — spawn/placement footprints from `OBSTACLE_VARIANT_DIMENSIONS` (= design `*_SIZE` × `OBSTACLE_ASSET_SCALE` `1.45`). **Collision** uses tighter per-asset physical hitboxes (see **Collision**). Player, chaser, and pickups are **not** scaled.
 
-**Placeholder colors** (`utils/colors.ts`, indexed by `OBSTACLE_VARIANT_RENDER_INDEX`):
+**Obstacle assets (render metadata + environment scale in `utils/obstacle-assets.ts`):**
+
+Three separate bounds:
+
+| Bound | Purpose |
+|-------|---------|
+| **PNG canvas** | Full artwork incl. transparent padding + cast shadows (`canvasWidth` × `canvasHeight`) |
+| **Object body** | Opaque voxel mass inside the PNG (`objectWidth` × `objectHeight`, `objectOffset*`) — anchors visual draw |
+| **Physical hitbox** | Gameplay collision only (`collision.widthRatio` etc. within object body) — **shadows never collide** |
+
+Spawn/placement uses scaled design footprints (`OBSTACLE_VARIANT_DIMENSIONS`). Rendering aligns the object body to that rect via `visualOffsetX` / `visualOffsetY`. **`getObstacleCollisionScreenRect`** (`utils/obstacle-collision.ts`) returns the precomputed physical hitbox — **`CollisionSystem`** uses this, not the PNG canvas or gameplay placement rect.
+
+**Placeholder colors** (`utils/colors.ts`, indexed by `OBSTACLE_VARIANT_RENDER_INDEX` — fallback only when artwork missing):
 
 | Variant | Color |
 |---------|--------|
@@ -599,11 +618,92 @@ Pooled obstacles in world space (**ObstacleSystem**) with separate presentation 
 | Cabin | Red `#DC2626` |
 | Wooden fence | Orange `#EA580C` |
 
+| Field | Role |
+|-------|------|
+| `canvasWidth` / `canvasHeight` | Full PNG canvas (includes shadow/padding) |
+| `objectWidth` / `objectHeight` | Physical object bounds inside the PNG |
+| `objectOffsetX` / `objectOffsetY` | Object origin within the canvas |
+| `renderWidth` / `renderHeight` | Scaled draw size (`scale = gameplayWidth / objectWidth`) |
+| `visualOffsetX` / `visualOffsetY` | Screen offset from gameplay rect so object body aligns with placement footprint |
+| `collision.*Ratio` | Physical hitbox within object body (per variant / tree visual) |
+
+**Cabin (`assets/obstacles/cabin.png`):**
+
+| | Source px | Gameplay |
+|--|-----------|----------|
+| PNG canvas | `536×610` | — |
+| Object bounds | `455×610` (offset `x=81` — shadow on left) | runtime **`118.9×107.3`** (`82×74` × `1.45`) |
+| Scale | `118.9 / 455 ≈ 0.261` | collision uses scaled footprint, not canvas |
+| Render size | — | `≈140×159` (full PNG, aspect preserved) |
+
+**Tree (`assets/obstacles/Big Tree (Tree 1).png`, `Medim Tree (Tree 2).png`, `Small Tree (Tree 3).png`):**
+
+Single gameplay variant **`tree`** with **three render-only visual variants** (`treeVisualVariant` `0 | 1 | 2` on `ObstacleRecord`). Assigned **once** in `activateObstacleFromSpawn` via the pool LCG (`rngState % 3` ≈ 33% each). Stable for the slot’s active lifetime — never re-rolled in `ObstacleRenderer`.
+
+| Visual | File | Verified canvas | Verified object bounds (shadow excluded) | Gameplay |
+|--------|------|-------------------|------------------------------------------|----------|
+| 0 — Big | `Big Tree (Tree 1).png` | **`659×480`** | `327×419` @ offset `(322, 6)` | runtime **`69.6×104.4`** |
+| 1 — Medium | `Medim Tree (Tree 2).png` | **`432×377`** | `176×327` @ offset `(251, 0)` | same |
+| 2 — Small | `Small Tree (Tree 3).png` | **`395×367`** | `215×358` @ offset `(176, 0)` | same |
+
+Scale per visual: `OBSTACLE_VARIANT_DIMENSIONS.tree.width / objectWidth`. Precomputed layouts in `TREE_VISUAL_LAYOUTS[0..2]`.
+
+**Small rock (`assets/obstacles/Small Rock.png`):**
+
+| | Supplied notes | Verified (repo PNG) | Gameplay |
+|--|----------------|---------------------|----------|
+| PNG canvas | `163×151` | **`122×113`** | — |
+| Object bounds | `135×164` (invalid — height > canvas) | **`100×110`** @ offset `(22, 0)` | runtime **`46.4×40.6`** |
+| Scale | — | `46.4 / 100 = 0.464` | collision uses scaled footprint, not canvas |
+| Render size | — | `≈56.6×52.4` | aspect preserved |
+
+**Large boulder (`assets/obstacles/Big Rock.png`):**
+
+| | Supplied notes | Verified (repo PNG) | Gameplay |
+|--|----------------|---------------------|----------|
+| PNG canvas | `432×325` | **`432×325`** ✓ | — |
+| Object bounds | `346×292` | **`412×292`** @ offset `(17, 2)` | runtime **`87×78.3`** |
+| Scale | — | `87 / 412 ≈ 0.211` | collision uses scaled footprint, not canvas |
+| Render size | — | `≈91.2×68.6` | aspect preserved |
+
+**Tree stump (`assets/obstacles/Stump.png`):**
+
+| | Supplied notes | Verified (repo PNG) | Gameplay |
+|--|----------------|---------------------|----------|
+| PNG canvas | `324×267` | **`243×200`** | — |
+| Object bounds | `282×267` | **`209×200`** @ offset `(33, 0)` | runtime **`49.3×43.5`** |
+| Scale | — | `49.3 / 209 ≈ 0.236` | collision uses scaled footprint, not canvas |
+| Render size | — | `≈57.3×47.2` | aspect preserved |
+
+**Wooden fence (`assets/obstacles/Fence.png`):**
+
+| | Supplied notes | Verified (repo PNG) | Gameplay |
+|--|----------------|---------------------|----------|
+| PNG canvas | `500×163` | **`375×122`** | — |
+| Object bounds | `461×163` | **`344×122`** @ offset `(30, 0)` | runtime **`104.4×31.9`** |
+| Scale | — | `104.4 / 344 ≈ 0.303` | collision uses scaled footprint, not canvas |
+| Render size | — | `≈113.8×37.0` | aspect preserved |
+
+**Integrated artwork status (all gameplay obstacles):**
+
+| Variant | Artwork |
+|---------|---------|
+| `small_rock` | PNG |
+| `large_boulder` | PNG |
+| `tree` | PNG × 3 (randomized visual) |
+| `tree_stump` | PNG |
+| `cabin` | PNG |
+| `wooden_fence` | PNG |
+
+Render sources indexed via `OBSTACLE_RENDER_ASSET_SOURCES`: tree `0..2`, cabin `3`, small rock `4`, large boulder `5`, tree stump `6`, wooden fence `7`. Precomputed layouts: `*_VISUAL_LAYOUT` constants per variant.
+
+All six gameplay obstacle variants now use final PNG artwork — **no obstacle placeholders remain**. Tree visuals `0..2` each carry distinct collision ratios. **`ObstacleSystem`** / **`CollisionSystem`** use physical hitboxes only; shadows and PNG padding are cosmetic.
+
 **Gameplay lifecycle:** SpawnManager → **ObstacleSystem** consumes `obstacle` requests → despawn when past bottom → inactive slots reused (see prior pooling steps).
 
 **Rendering flow:**
 
-1. **SkiGameViewport** layer order: **WorldRenderer** → **ObstacleRenderer** → **CoinRenderer** → **SpeedBoostRenderer** → **ShieldPickupRenderer** → **SnowTrailRenderer** → **CollisionBurstRenderer** → **ShieldShatterRenderer** → **ChaserRenderer** → **ShieldBubbleRenderer** → **PlayerRenderer** → **GameplayFeedbackRenderer** → **Hud** → **TouchControls** → **PauseButton** → **PauseOverlay** → **GameOverOverlay**.
+1. **SkiGameViewport** layer order: **WorldRenderer** → **SkiTrackRenderer** → **ObstacleRenderer** → **CoinRenderer** → **SpeedBoostRenderer** → **ShieldPickupRenderer** → **CollisionBurstRenderer** → **ShieldShatterRenderer** → **ChaserRenderer** → **ShieldBubbleRenderer** → **PlayerRenderer** → **GameplayFeedbackRenderer** → **Hud** → **TouchControls** → **PauseButton** → **PauseOverlay** → **GameOverOverlay**.
 2. Each frame, `engine.onFrame` updates shared values per fixed slot index (`obstacleRef.obstacles[i]`).
 3. Screen rect: center-anchored world position minus `worldRef.scrollOffsetY` and `cameraRef.offsetX`.
 4. Culled if outside viewport ± `OBSTACLE_RENDER_MARGIN` (`opacity` 0); inactive slots hidden.
@@ -623,20 +723,24 @@ AABB hit tests in **screen space** only — no obstacle removal; damage is appli
 |------|------|
 | `types/CollisionTypes.ts` | `CollisionState` on `engine.collisionRef` |
 | `utils/collision.ts` | `aabbIntersectsWithPadding()` |
+| `utils/obstacle-collision.ts` | `getObstacleCollisionScreenRect()` — physical hitbox (shadow excluded) |
 | `systems/CollisionSystem.ts` | Resets state each fixed step; first hit wins |
+
+**Visual bounds ≠ collision bounds:** PNG canvas and cast shadows are rendered but never tested. Each obstacle asset defines a **physical hitbox** (`ObstacleCollisionMetadata`: `widthRatio`, `heightRatio`, `offsetXRatio`, `offsetYRatio` within the object body). Trees use per-visual collision metadata for randomized Tree 1/2/3. Hitboxes scale with `OBSTACLE_ASSET_SCALE` via the same object-body anchor math as rendering.
 
 **GameConfig (collision):**
 
 | Key | Default | Meaning |
 |-----|---------|---------|
 | `PLAYER_COLLISION_PADDING` | `4` | Inset on player box (px) |
-| `OBSTACLE_COLLISION_PADDING` | `2` | Inset on obstacle box (px) |
+| `OBSTACLE_COLLISION_PADDING` | `2` | Inset on physical obstacle hitbox (px) |
+| `DEBUG_OBSTACLE_HITBOXES` | `false` | When `true`, **ObstacleRenderer** draws translucent red physical hitboxes (tuning only) |
 
 **Flow (each fixed update, after ObstacleSystem):**
 
 1. `resetCollisionState(collisionRef)` → `hasCollision: false`, `obstacleId: 0`, `obstacleType: null`.
 2. Player AABB from `playerRef` (screen top-left + size).
-3. For each **active** obstacle, world → screen via `obstacleWorldToScreenRect` (scroll + camera).
+3. For each **active** obstacle, physical hitbox via `getObstacleCollisionScreenRect` (gameplay rect + precomputed collision layout; scroll + camera).
 4. Test AABB overlap with configurable insets; on first hit set `hasCollision`, `obstacleId`, `obstacleType` and **stop**.
 5. Does not mutate player, obstacles, or spawn side effects.
 
@@ -648,7 +752,7 @@ const { hasCollision, obstacleId, obstacleType } = engine.collisionRef.current;
 
 ## Health
 
-Run score and per-variant obstacle consequences on `engine.scoreRef` / `engine.healthRef` / `engine.chaserRef`. **HealthSystem** runs after **CollisionSystem** and applies centralized values from `utils/score-consequences.ts`. Active shield immunity from `engine.shieldRef` still blocks all obstacle consequences (score + health + chase pressure).
+Run score and per-variant obstacle consequences on `engine.scoreRef` / `engine.healthRef`. **HealthSystem** runs after **CollisionSystem** and applies centralized values from `utils/score-consequences.ts`. Active shield immunity from `engine.shieldRef` still blocks all obstacle consequences (score + health). Chaser vertical gap follows **health only** (see Chaser section) — obstacle hits do not move the chaser closer.
 
 | File | Role |
 |------|------|
@@ -656,7 +760,7 @@ Run score and per-variant obstacle consequences on `engine.scoreRef` / `engine.h
 | `types/score-state.ts` | `ScoreState` (`currentScore`, `lastDistanceScoreBucket`; score floored at 0) |
 | `utils/score-consequences.ts` | `OBSTACLE_CONSEQUENCES`, `COIN_COLLECT_SCORE`, `DISTANCE_METERS_PER_SCORE_POINT`, `applyScoreDelta`, `applyDistanceScoreProgress` |
 | `systems/TimeSystem.ts` | Advances distance; awards silent +1 score per `DISTANCE_METERS_PER_SCORE_POINT` (`25`) meters via `scoreRef` |
-| `systems/HealthSystem.ts` | Runs after **CollisionSystem**; applies score + damage + chase pressure from `collisionRef` |
+| `systems/HealthSystem.ts` | Runs after **CollisionSystem**; applies score + damage from `collisionRef` |
 
 **GameConfig (health):**
 
@@ -667,26 +771,25 @@ Run score and per-variant obstacle consequences on `engine.scoreRef` / `engine.h
 
 **Obstacle consequences (`OBSTACLE_CONSEQUENCES`):**
 
-| Variant | Score | Health | Chase pressure |
-|---------|-------|--------|----------------|
-| `small_rock` | −15 | 0 | 8 |
-| `tree_stump` | −20 | 0 | 10 |
-| `large_boulder` | −30 | −1 | 15 |
-| `tree` | −25 | −1 | 15 |
-| `wooden_fence` | −35 | −1 | 20 |
-| `cabin` | −50 | −2 | 30 |
+| Variant | Score | Health |
+|---------|-------|--------|
+| `small_rock` | −15 | 0 |
+| `tree_stump` | −20 | 0 |
+| `large_boulder` | −30 | −1 |
+| `tree` | −25 | −1 |
+| `wooden_fence` | −35 | −1 |
+| `cabin` | −50 | −2 |
 
 **Consequence flow (each fixed update, after CollisionSystem):**
 
 1. Tick down `invulnerabilityRemainingMs`; set `isInvulnerable` when &gt; 0.
 2. If `!collisionRef.hasCollision`, clear `lastDamagingObstacleId` (overlap ended) and exit.
-3. If invulnerable, ignore collision (no score, damage, or chase pressure).
+3. If invulnerable, ignore collision (no score or damage).
 4. If `collisionRef.obstacleId === lastDamagingObstacleId`, skip (same obstacle still overlapping).
-5. If `shieldRef.isShieldActive`, ignore score + damage + chase pressure but still record `lastDamagingObstacleId` and start `PLAYER_INVULNERABILITY_MS`.
+5. If `shieldRef.isShieldActive`, ignore score + damage but still record `lastDamagingObstacleId` and start `PLAYER_INVULNERABILITY_MS`.
 6. Otherwise apply `scoreDelta` via `applyScoreDelta` (`Math.max(0, score + delta)`).
 7. If `healthDamage > 0`, subtract (clamped), start invulnerability. Score-only hits (0 HP) do **not** start i-frames.
-8. Apply `chasePressure` via `applyChasePressure` on `engine.chaserRef` (once per accepted hit).
-9. Store `lastDamagingObstacleId`.
+8. Store `lastDamagingObstacleId`.
 
 **Feedback:** While `isInvulnerable`, **PlayerRenderer** alternates opacity 1.0 / 0.35 on a 60 ms / 60 ms square wave derived from `invulnerabilityRemainingMs` (no extra timer).
 
@@ -700,51 +803,47 @@ const {
 const { currentScore } = engine.scoreRef.current;
 ```
 
-Internal `lastDamagingObstacleId` prevents multi-tick score, damage, or chase pressure from one overlap. After separating from an obstacle, a new overlap can apply consequences again once i-frames allow (or immediately for score-only obstacles).
+Internal `lastDamagingObstacleId` prevents multi-tick score or damage from one overlap. After separating from an obstacle, a new overlap can apply consequences again once i-frames allow (or immediately for score-only obstacles).
 
 ## Chaser (Version 1)
 
-Pressure / feedback follower behind the skier — **not** a second simulated skier.
+Health-driven vertical follower behind the skier — **not** a second simulated skier. Three independent responsibilities: **vertical Y** from health, **horizontal X** from player path breadcrumbs, **obstacle safety** via local visual avoidance (horizontal override only).
 
 | File | Role |
 |------|------|
 | `types/ChaserTypes.ts` | `ChaserState`, `createInitialChaserState`, `resetChaserState` |
-| `entities/Chaser.ts` | Natural/final target helpers, `applyChasePressure`, `snapChaserBehindPlayer` |
+| `entities/Chaser.ts` | `resolveChaserHealthTargetGap`, `resolveChaserFinalTargetGap`, `snapChaserBehindPlayer` |
 | `entities/ChaserAvoidance.ts` | Local visual obstacle steering (allocation-free scan) |
-| `systems/ChaserSystem.ts` | Gap + horizontal smoothing; pressure recovery; Speed Boost escape; avoidance integration |
+| `systems/ChaserSystem.ts` | Gap + horizontal smoothing; Speed Boost escape; avoidance integration |
 | `ui/ChaserRenderer.tsx` | Placeholder character; Reanimated `onFrame` sync from `chaserRef` |
 
-**`engine.chaserRef` fields:** `currentGap`, `targetGap`, `chasePressure`, screen `x` / `y`, `timeSinceLastPressureMs`, `avoidObstacleId`, `avoidDirection`, `lastAvoidDirection`, `path` (fixed-capacity world-space breadcrumb ring buffer).
+**`engine.chaserRef` fields:** `currentGap`, `targetGap`, screen `x` / `y`, `avoidObstacleId`, `avoidDirection`, `lastAvoidDirection`, `path` (fixed-capacity world-space breadcrumb ring buffer).
 
 **Gap semantics:** `currentGap` is **player-top → chaser-top** (px). Visible snow between character bounds = `currentGap − PLAYER_HEIGHT` (player bottom to chaser top). Chaser screen Y = `player.y + currentGap`.
 
-**Intro / Play Again:** `currentGap` starts at `CHASER_PRESSURE_GAP` (`128`) — same proximity as 2-heart baseline — so the chaser is immediately visible. With 3 hearts and zero pressure, **natural** `targetGap` is `CHASER_SAFE_GAP` (`180`); existing exponential smoothing (`CHASER_GAP_SMOOTHING` `3.5`) gradually opens the gap (“pulling away”) without timers or a separate intro state machine.
+**Intro / Play Again:** `currentGap` starts at `CHASER_PRESSURE_GAP` (`128`) so the chaser is immediately visible. At full health, **targetGap** is `CHASER_SAFE_GAP` (`180`); exponential smoothing (`CHASER_GAP_SMOOTHING` `3.5`) gradually opens the gap without timers or a separate intro state machine.
 
-**Spatial path following (base horizontal model):** The Player leaves a **breadcrumb trail** in world space. Each fixed tick records `{ worldY, followX }` into a pre-allocated ring buffer when the Player advances `CHASER_PATH_SAMPLE_SPACING` (`12` px) in world Y (`scrollOffsetY − player.y`). Between samples the newest breadcrumb’s X is refined. The Chaser’s home horizontal target is read from this path at **its own world Y** (`scrollOffsetY − chaser.y`) with linear X interpolation — not live Player X, not elapsed-time delay. `currentGap` controls vertical separation; closer gaps naturally sample earlier points on the same spatial path. Buffer capacity `48` (~576 world px). Resets on Play Again / viewport re-anchor; recording pauses while not `playing`. Speed boost does not break path following — breadcrumbs are spatial, not temporal.
+**Spatial path following (horizontal model):** The Player leaves a **breadcrumb trail** in world space. Each fixed tick records `{ worldY, followX }` into a pre-allocated ring buffer when the Player advances `CHASER_PATH_SAMPLE_SPACING` (`12` px) in world Y (`scrollOffsetY − player.y`). Between samples the newest breadcrumb’s X is refined. The Chaser’s home horizontal target is read from this path at **its own world Y** (`scrollOffsetY − chaser.y`) with linear X interpolation — not live Player X, not elapsed-time delay. `currentGap` controls vertical separation; closer gaps naturally sample earlier points on the same spatial path. Buffer capacity `48` (~576 world px). Resets on Play Again / viewport re-anchor; recording pauses while not `playing`. Speed boost does not break path following — breadcrumbs are spatial, not temporal.
 
-**Local visual obstacle avoidance:** **ChaserSystem** steers with a **Chaser-specific visual avoidance envelope** (not gameplay collision AABBs, not CollisionSystem, not pathfinding). Effective avoidance size is `max(gameplaySize, CHASER_MIN_AVOID_OBSTACLE_*)` — e.g. `small_rock` gameplay `32×28` becomes avoidance `44×48`. Threats use horizontal corridor tests against the **path target** (or imminent overlap at current Chaser X). Effective lookahead = `120 + requiredLateral × 1.75`. Side selection: primary clearance → one-step secondary threat → directional hysteresis (`16` px reversal advantage) → clearance → shorter move from path line.
+**Local visual obstacle avoidance:** **ChaserSystem** steers with a **Chaser-specific visual avoidance envelope** (not gameplay collision AABBs, not CollisionSystem, not pathfinding). Effective avoidance size is `max(gameplaySize, CHASER_MIN_AVOID_OBSTACLE_*)` — e.g. scaled `small_rock` gameplay `46.4×40.6` becomes avoidance `46.4×48`. Threats use horizontal corridor tests against the **path target** (or imminent overlap at current Chaser X). Effective lookahead = `120 + requiredLateral × 1.75`. Side selection: primary clearance → one-step secondary threat → directional hysteresis (`16` px reversal advantage) → clearance → shorter move from path line.
 
 **Horizontal steering priority:** (1) obstacle safety / avoidance, (2) Player spatial path. When no threat is active, `resolveSafeFollowTargetX` holds current X if returning toward the path would re-enter a nearby envelope. Follow dead zone `10` px; smoothing `5.5` (path) / `8` (avoidance).
 
-Avoidance is visual steering only — no score/health/pressure changes, no Chaser gameplay collision.
+Avoidance is visual steering only — no score/health/gap changes, no Chaser gameplay collision.
 
-**Proximity model (natural target from hearts, then pressure closes the gap):**
+**Vertical proximity (health only — obstacles do not affect gap):**
 
-| Hearts | Baseline | Config |
-|--------|----------|--------|
-| 3 | SAFE | `CHASER_SAFE_GAP` `180` |
-| 2 | PRESSURE | `CHASER_PRESSURE_GAP` `128` |
-| 1 | DANGER (mandatory) | `CHASER_DANGER_GAP` `89` |
+| Hearts | Target gap | Config | Visible snow (edge-to-edge) |
+|--------|------------|--------|-----------------------------|
+| 3 | SAFE | `CHASER_SAFE_GAP` `180` | ~116 px |
+| 2 | PRESSURE | `CHASER_PRESSURE_GAP` `128` | ~64 px |
+| 1 | DANGER | `CHASER_DANGER_GAP` `96` | ~32 px |
 
-`naturalTargetGap = clamp(baseline − chasePressure, CHASER_MIN_GAP, baseline)`. At 1 heart the baseline is DANGER (`89` → ~`25` px visible snow). Max-pressure clamp `CHASER_MIN_GAP` `80` preserves ~`16` px visible snow — never overlap.
+`targetGap = resolveChaserHealthTargetGap(currentHealth)` with defensive clamp `CHASER_MIN_GAP` `80` (not a normal health target). Obstacle hits apply score/health only — **no** chase-pressure accumulation.
 
-**Speed Boost escape:** While `speedBoostRef.isSpeedBoostActive`, **ChaserSystem** adds `CHASER_BOOST_ESCAPE_BONUS` (`90`) to the natural target only — **does not** clear `chasePressure`, heal, or change score/HP. Opening uses faster smoothing (`CHASER_BOOST_ESCAPE_SMOOTHING` `6`); when boost ends the bonus drops and catch-up uses normal `CHASER_GAP_SMOOTHING` `3.5` (no snap). Works at 1 heart (e.g. natural `89` + boost → temporary `179`). Collisions during boost still apply normal consequences to the natural target underneath.
+**Speed Boost escape:** While `speedBoostRef.isSpeedBoostActive`, **ChaserSystem** adds `CHASER_BOOST_ESCAPE_BONUS` (`90`) to the health target only — does not heal or change score/HP. Opening uses faster smoothing (`CHASER_BOOST_ESCAPE_SMOOTHING` `6`); when boost ends the bonus drops and catch-up uses normal `CHASER_GAP_SMOOTHING` `3.5` (no snap).
 
-**Recovery:** After `CHASER_RECOVERY_DELAY_MS` without a new pressure hit, `chasePressure` decays at `CHASER_RECOVERY_PRESSURE_PER_SEC` so score-only hits do not permanently pin the chaser.
-
-**Shield:** Shielded obstacle hits apply **zero** chase pressure (HealthSystem returns before `applyChasePressure`).
-
-**Pause / game over:** Fixed updates skip while not `playing` — chaser freezes with the rest of simulation. **Play Again** resets pressure/recovery and snaps `currentGap` to intro (`128`); natural target becomes SAFE when hearts are full.
+**Pause / game over:** Fixed updates skip while not `playing` — chaser freezes with the rest of simulation. **Play Again** snaps `currentGap` to intro (`128`); target follows current health.
 
 **Version 1 limits:** No chaser ↔ obstacle / pickup / player **collision** (visual steering only), no pathfinding / AI, no catch / Game Over from the chaser. Only `currentHealth ≤ 0` ends the run.
 
@@ -798,25 +897,39 @@ const { totalCoinsCollected, activeCount, coins } = engine.coinRef.current;
 
 No allocations during `fixedUpdate` in **CoinSystem**.
 
-## Snow trail (visual)
+## Ski tracks (visual)
 
-Lightweight ski spray behind the player — **presentation only**; no gameplay or engine systems changes.
+Dual continuous ski-carve tracks left in world space — **presentation only**; no gameplay systems changes.
 
 | File | Role |
 |------|------|
-| `effects/SnowTrail.ts` | Fixed pool (`MAX_SNOW_PARTICLES` 64), spawn/update tick, world→screen helpers |
-| `ui/SnowTrailRenderer.tsx` | Pooled memo slots; Reanimated white dots |
+| `types/SkiTrackTypes.ts` | Fixed ring-buffer point + segment layout types |
+| `effects/SkiTrack.ts` | World-space path sampling, segment layout rebuild, reset helpers |
+| `systems/SkiTrackSystem.ts` | Records player feet world positions on fixed steps |
+| `ui/SkiTrackRenderer.tsx` | Fixed segment slots; two parallel Reanimated capsule strokes per segment |
+
+**Replaced:** bubble/dot **`SnowTrail`** particle pool (`effects/SnowTrail.ts`, `ui/SnowTrailRenderer.tsx`).
 
 **Behavior:**
 
-1. Spawns only while `gameStateRef.currentState === 'playing'` (~2 particles / **64 ms** just **below** the player placeholder, offset toward **left/right skis** outside the body).
-2. Pool stored per `GameEngine` via `WeakMap` (no new `GameEngine` refs).
-3. **SnowTrailRenderer** registers `tickSnowTrail` on `engine.onFrame` (frame delta); slots sync shared values after tick (same pattern as pickup renderers).
-4. Particles use world X/Y + scroll/camera for screen position; lifetime **490–630 ms** with drift, shrink, and fade (peak opacity **1.0**).
-5. Placeholder: **6–10 px** rounded light-blue snow dots (`snowTrailDot`); no images/SVG/canvas.
-6. Layer: **above pickups**, **below PlayerRenderer**.
+1. **SkiTrackSystem** samples player feet into a preallocated ring buffer every **`SKI_TRACK_SAMPLE_DISTANCE`** world px while `playing`.
+2. Points are stored in **world space** (`worldX = screenX + cameraOffsetX`, `worldY = scrollOffsetY − feetScreenY`) so tracks scroll naturally with the mountain.
+3. **SkiTrackRenderer** rebuilds up to **`SKI_TRACK_MAX_POINTS − 1`** elongated capsule segments per frame (overlap **`SKI_TRACK_SEGMENT_OVERLAP`**) with perpendicular **`SKI_TRACK_SEPARATION`** for left/right skis.
+4. Opacity fades from **`SKI_TRACK_OPACITY_FAR`** (oldest) → **`SKI_TRACK_OPACITY`** (near player). Oldest points prune below the viewport.
+5. Layer: **above WorldRenderer**, **below obstacles/pickups/player**.
 
-No allocations during `tickSnowTrail` / render sync.
+**GameConfig (ski tracks):**
+
+| Key | Default | Meaning |
+|-----|---------|---------|
+| `SKI_TRACK_MAX_POINTS` | `48` | Ring-buffer path history |
+| `SKI_TRACK_SAMPLE_DISTANCE` | `6` | Min world px between samples |
+| `SKI_TRACK_WIDTH` | `4` | Stroke width (px) |
+| `SKI_TRACK_SEPARATION` | `12` | Distance between left/right tracks |
+| `SKI_TRACK_OPACITY` / `FAR` | `0.38` / `0.15` | Near/far stroke opacity |
+| `SKI_TRACK_SEGMENT_OVERLAP` | `2` | Capsule overlap to hide gaps |
+
+No React state per frame; no allocations during sampling or render sync.
 
 ## Impact VFX (visual)
 
@@ -1085,8 +1198,8 @@ The player is split across **data** (`entities/Player.ts`), **logic** (`systems/
 1. `useRegisterCoreSystems` registers all core systems including **SpawnManager** and **ObstacleSystem** (after spawn) on **SkiGameViewport** mount.
 2. `onLayout` on **SkiGameViewport** (`flex: 1`) → `engine.setViewport(width, height)` and sync React `viewport` state on every size change; player spawn position is re-aligned to the measured viewport (layout hook only).
 3. **PlayerSystem** creates one **Player** → `engine.playerRef.current` (mutable ref, not React state).
-4. **useGameViewport** copies a **PlayerSnapshot** once for the first paint.
-5. **SkiGameViewport** renders **WorldRenderer**, **ObstacleRenderer**, **CoinRenderer**, **SpeedBoostRenderer**, **ShieldPickupRenderer**, **SnowTrailRenderer**, **CollisionBurstRenderer**, **ShieldShatterRenderer**, **PlayerRenderer**, **ShieldBubbleRenderer**, **Hud**, and **TouchControls** (topmost invisible touch layer).
+4. **useGameViewport** syncs **PlayerSnapshot** after `onLayout` + **PlayerSystem** spawn; `isSimulationReady = viewport && playerSnapshot`.
+5. **SkiGameViewport** renders gameplay entities only when viewport/player preconditions are met (**ChaserRenderer** / **PlayerRenderer** require `playerSnapshot`; pooled renderers start at `opacity = 0`).
 6. **MovementSystem** updates horizontal position; **PlayerFeelSystem** updates lean from velocity.
 7. **PlayerRenderer** mirrors `playerRef.current.x` and `playerFeelRef.current.leanAngle` without `useState`.
 8. No camera motion, collision, or per-frame React updates on gameplay state.
@@ -1108,7 +1221,7 @@ The root route `app/index.tsx` renders **SkiGameScreen** fullscreen (Stack root,
 
 ## Performance conventions
 
-- **SkiGameScreen**, **SkiGameRoot**, **SkiGameViewport**, **SkiGameBackground**, **PlayerRenderer**, **SnowTrailRenderer**, **CollisionBurstRenderer**, **ShieldShatterRenderer**, **ShieldPickupRenderer**, **ShieldBubbleRenderer**, **ObstacleRenderer**, **CoinRenderer**, **SpeedBoostRenderer**, **WorldRenderer**, **Hud**, and **TouchControls** are wrapped in `React.memo`.
+- **SkiGameScreen**, **SkiGameRoot**, **SkiGameViewport**, **SkiGameBackground**, **PlayerRenderer**, **SkiTrackRenderer**, **CollisionBurstRenderer**, **ShieldShatterRenderer**, **ShieldPickupRenderer**, **ShieldBubbleRenderer**, **ObstacleRenderer**, **CoinRenderer**, **SpeedBoostRenderer**, **WorldRenderer**, **Hud**, and **TouchControls** are wrapped in `React.memo`.
 - Input: **`engine.inputRef`** only — **TouchControls** uses stable `useCallback` handlers; no input `useState`.
 - Simulation: no per-frame `useState`; **WorldRenderer** uses Reanimated `useSharedValue` updated from `engine.onFrame`.
 - Styles use `StyleSheet.create` for stable references.

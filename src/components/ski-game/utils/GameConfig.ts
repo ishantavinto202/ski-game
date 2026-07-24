@@ -113,8 +113,30 @@ export const GAME_CONFIG = {
   PLAYER_COLLISION_PADDING: 4,
   /** Inset (px) applied to obstacle AABB for hit tests. */
   OBSTACLE_COLLISION_PADDING: 2,
+  /** Draw translucent physical hitboxes over obstacles (development tuning only). */
+  DEBUG_OBSTACLE_HITBOXES: false,
+  /** Log rejected/repositioned obstacle spawn placements (development tuning only). */
+  DEBUG_OBSTACLE_SPACING: false,
+  /**
+   * Extra horizontal clearance added to the player collision width when validating
+   * passable gaps between obstacle gameplay footprints (px).
+   */
+  OBSTACLE_PASSAGE_SAFETY_MARGIN: 14,
+  /**
+   * Extra vertical clearance added to the player collision height when validating
+   * passable gaps between stacked obstacle gameplay footprints (px).
+   */
+  OBSTACLE_VERTICAL_SAFETY_MARGIN: 12,
+  /** Deterministic lane/world-X correction attempts per pattern obstacle before skip. */
+  MAX_OBSTACLE_PLACEMENT_ATTEMPTS: 4,
+  /**
+   * Environment obstacle render + collision footprint multiplier.
+   * Applied once to design-base `*_SIZE` values via `OBSTACLE_VARIANT_DIMENSIONS`.
+   * Does not affect player, chaser, pickups, or HUD.
+   */
+  OBSTACLE_ASSET_SCALE: 1.45,
 
-  /** Placeholder footprint (px) — stable for future voxel art swap. */
+  /** Design-base gameplay footprints (px) — multiplied by `OBSTACLE_ASSET_SCALE` at runtime. */
   SMALL_ROCK_SIZE: { width: 32, height: 28 },
   LARGE_BOULDER_SIZE: { width: 60, height: 54 },
   TREE_SIZE: { width: 48, height: 72 },
@@ -142,6 +164,16 @@ export const GAME_CONFIG = {
   EDGE_TREE_CLUSTER_GAP_MAX: 560,
   MAX_DECORATIVE_TREES: 128,
   DECORATIVE_TREE_DESPAWN_MARGIN: 64,
+
+  /** World-space dual ski track carved into the snow (visual only). */
+  SKI_TRACK_MAX_POINTS: 48,
+  SKI_TRACK_SAMPLE_DISTANCE: 6,
+  SKI_TRACK_WIDTH: 4,
+  SKI_TRACK_SEPARATION: 12,
+  SKI_TRACK_OPACITY: 0.38,
+  SKI_TRACK_OPACITY_FAR: 0.15,
+  SKI_TRACK_SEGMENT_OVERLAP: 2,
+  SKI_TRACK_RENDER_MARGIN: 48,
 
   /** Maximum pooled coins alive at once. */
   MAX_COINS: 24,
@@ -188,21 +220,15 @@ export const GAME_CONFIG = {
    * `currentGap` = player-top → chaser-top (px). Edge-to-edge snow strip =
    * `currentGap − PLAYER_HEIGHT` (player bottom to chaser top).
    */
-  /** Vertical gap (px) between player top and chaser top at full health / no pressure. */
+  /** 3-heart vertical target (player-top → chaser-top). */
   CHASER_SAFE_GAP: 180,
-  /** Baseline gap at 2 hearts; also intro / Play Again starting `currentGap`. */
+  /** 2-heart vertical target; also intro / Play Again starting `currentGap`. */
   CHASER_PRESSURE_GAP: 128,
-  /** Target visible snow (px) between player bottom and chaser top at 1-heart baseline. */
-  CHASER_DANGER_EDGE_GAP: 25,
-  /** Target visible snow (px) at max-pressure clamp (must stay below DANGER edge gap). */
-  CHASER_MIN_EDGE_GAP: 16,
-  /** 1-heart baseline: PLAYER_HEIGHT (64) + CHASER_DANGER_EDGE_GAP (25) = 89. */
-  CHASER_DANGER_GAP: 89,
-  /** Max-pressure floor: PLAYER_HEIGHT (64) + CHASER_MIN_EDGE_GAP (16) = 80. */
+  /** 1-heart vertical target (~32 px visible edge-to-edge snow). */
+  CHASER_DANGER_GAP: 96,
+  /** Defensive floor clamp only — not a normal health target. */
   CHASER_MIN_GAP: 80,
-  /** Cap on accumulated chasePressure (px-equivalent gap reduction). */
-  CHASER_MAX_PRESSURE: 100,
-  /** Temporary separation added to natural target while Speed Boost is active. */
+  /** Temporary separation added to health target while Speed Boost is active. */
   CHASER_BOOST_ESCAPE_BONUS: 90,
   /** Exponential smoothing when boost opens gap (currentGap → larger target). */
   CHASER_BOOST_ESCAPE_SMOOTHING: 6,
@@ -210,10 +236,6 @@ export const GAME_CONFIG = {
   CHASER_GAP_SMOOTHING: 3.5,
   /** Exponential smoothing rate for chaser X → path target. */
   CHASER_HORIZONTAL_SMOOTHING: 5.5,
-  /** Idle time (ms) after a hit before chase pressure begins recovering. */
-  CHASER_RECOVERY_DELAY_MS: 2500,
-  /** Chase pressure recovered per second after the delay (slow). */
-  CHASER_RECOVERY_PRESSURE_PER_SEC: 4,
   /** Base vertical approach window above Chaser for local visual avoidance (px). */
   CHASER_AVOID_LOOKAHEAD: 120,
   /** Extra approach px per px of estimated required lateral dodge. */

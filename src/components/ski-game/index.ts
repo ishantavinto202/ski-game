@@ -62,7 +62,7 @@ export {
   resetGame,
 } from './entities';
 export { playAgain } from './systems/RestartSystem';
-export { PlayerRenderer, WorldRenderer, TouchControls, ObstacleRenderer, CoinRenderer, SpeedBoostRenderer, ShieldPickupRenderer, SnowTrailRenderer, CollisionBurstRenderer, ShieldShatterRenderer, ChaserRenderer, ShieldBubbleRenderer, Hud, PauseButton, PauseOverlay, GameOverOverlay, ScoringGuideOverlay, ScoringGuideInfoButton } from './ui';
+export { PlayerRenderer, WorldRenderer, TouchControls, ObstacleRenderer, CoinRenderer, SpeedBoostRenderer, ShieldPickupRenderer, SkiTrackRenderer, CollisionBurstRenderer, ShieldShatterRenderer, ChaserRenderer, ShieldBubbleRenderer, Hud, PauseButton, PauseOverlay, GameOverOverlay, ScoringGuideOverlay, ScoringGuideInfoButton } from './ui';
 export type { PauseOverlayProps, PauseQuitHandler, GameOverOverlayProps, GameOverActionHandler, ScoringGuideOverlayProps } from './ui';
 export type {
   GameSystem,

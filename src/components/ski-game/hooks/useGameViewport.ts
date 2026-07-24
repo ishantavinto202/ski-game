@@ -81,7 +81,7 @@ export function useGameViewport(): GameViewportState {
     }
   }, [engine, viewport]);
 
-  const isSimulationReady = viewport !== null;
+  const isSimulationReady = viewport !== null && playerSnapshot !== null;
 
   return { onLayout, playerSnapshot, viewport, isSimulationReady };
 }

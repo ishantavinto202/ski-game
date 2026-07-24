@@ -10,7 +10,7 @@ export { ShieldPickupRenderer } from './ShieldPickupRenderer';
 export { CollisionBurstRenderer } from './CollisionBurstRenderer';
 export { GameplayFeedbackRenderer } from './GameplayFeedbackRenderer';
 export { ShieldShatterRenderer } from './ShieldShatterRenderer';
-export { SnowTrailRenderer } from './SnowTrailRenderer';
+export { SkiTrackRenderer } from './SkiTrackRenderer';
 export { ChaserRenderer } from './ChaserRenderer';
 export { Hud } from './Hud';
 export { PauseButton } from './PauseButton';

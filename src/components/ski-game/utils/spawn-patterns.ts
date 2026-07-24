@@ -1,8 +1,17 @@
 import { logCabinSpawnRequestCreated } from './cabin-debug';
 import { SPAWN_PATTERN_LIBRARY, SPAWN_PATTERN_WEIGHT_TOTAL } from '../managers/SpawnPatterns';
-import type { ObstacleVariant } from '../types/ObstacleTypes';
+import type { ObstaclePoolState, ObstacleVariant } from '../types/ObstacleTypes';
 import type { SpawnPattern } from '../types/SpawnPatternTypes';
 import type { SpawnManagerState, SpawnRequest } from '../types/SpawnTypes';
+import { GAME_CONFIG } from './GameConfig';
+import {
+  clampPatternLaneIndex,
+  isObstacleSpawnSpacingValid,
+  logObstacleSpacingRejected,
+  logObstacleSpacingRepositioned,
+  recordPatternAcceptedObstacleSpacing,
+  resolveObstaclePlacementLaneDelta,
+} from './obstacle-spacing';
 
 export function pickWeightedSpawnPattern(spawnState: SpawnManagerState): SpawnPattern {
   spawnState.patternRngState = (spawnState.patternRngState * 1664525 + 1013904223) >>> 0;
@@ -86,10 +95,13 @@ export function enqueueSpawnPatternRequests(
   pattern: SpawnPattern,
   patternOriginY: number,
   centerLaneIndex: number,
+  obstaclePool: ObstaclePoolState,
 ): number {
   const { laneCount, laneWidth, playableOriginX, requests } = spawnState;
   const obstacles = pattern.obstacles;
   let written = 0;
+  let patternAcceptedCount = 0;
+  const maxAttempts = GAME_CONFIG.MAX_OBSTACLE_PLACEMENT_ATTEMPTS;
 
   for (let index = 0; index < obstacles.length; index += 1) {
     if (spawnState.pendingCount >= requests.length) {
@@ -97,16 +109,57 @@ export function enqueueSpawnPatternRequests(
     }
 
     const entry = obstacles[index];
-    const laneIndex = resolvePatternLaneIndex(centerLaneIndex, entry.laneOffset, laneCount);
-    const worldX = resolvePatternWorldX(playableOriginX, laneWidth, laneIndex);
+    const baseLaneIndex = resolvePatternLaneIndex(centerLaneIndex, entry.laneOffset, laneCount);
     const worldY = patternOriginY - entry.forwardOffset;
+    const originalWorldX = resolvePatternWorldX(playableOriginX, laneWidth, baseLaneIndex);
+
+    let placed = false;
+    let placedWorldX = originalWorldX;
+    let placedLaneIndex = baseLaneIndex;
+
+    for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+      const laneDelta = resolveObstaclePlacementLaneDelta(attempt, index);
+      const candidateLaneIndex = clampPatternLaneIndex(baseLaneIndex + laneDelta, laneCount);
+      const candidateWorldX = resolvePatternWorldX(playableOriginX, laneWidth, candidateLaneIndex);
+
+      if (
+        isObstacleSpawnSpacingValid(
+          candidateWorldX,
+          worldY,
+          entry.variant,
+          obstaclePool,
+          requests,
+          spawnState.pendingCount,
+          patternAcceptedCount,
+        )
+      ) {
+        placed = true;
+        placedWorldX = candidateWorldX;
+        placedLaneIndex = candidateLaneIndex;
+        if (attempt > 0) {
+          logObstacleSpacingRepositioned(
+            entry.variant,
+            originalWorldX,
+            candidateWorldX,
+            worldY,
+            attempt,
+          );
+        }
+        break;
+      }
+    }
+
+    if (!placed) {
+      logObstacleSpacingRejected(entry.variant, originalWorldX, worldY);
+      continue;
+    }
 
     const slotIndex = spawnState.pendingCount;
     writeObstacleSpawnRequest(requests[slotIndex], {
       id: spawnState.nextRequestId,
-      worldX,
+      worldX: placedWorldX,
       worldY,
-      laneIndex,
+      laneIndex: placedLaneIndex,
       variant: entry.variant,
     });
     if (entry.variant === 'cabin') {
@@ -115,6 +168,12 @@ export function enqueueSpawnPatternRequests(
     spawnState.nextRequestId += 1;
     spawnState.pendingCount += 1;
     written += 1;
+    patternAcceptedCount = recordPatternAcceptedObstacleSpacing(
+      placedWorldX,
+      worldY,
+      entry.variant,
+      patternAcceptedCount,
+    );
   }
 
   return written;

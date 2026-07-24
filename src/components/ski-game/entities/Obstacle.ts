@@ -18,7 +18,13 @@ export function createInactiveObstacleRecord(): ObstacleRecord {
     active: false,
     spawnRequestId: 0,
     laneIndex: 0,
+    treeVisualVariant: 0,
   };
+}
+
+function pickTreeVisualVariant(pool: ObstaclePoolState): 0 | 1 | 2 {
+  pool.rngState = (pool.rngState * 1664525 + 1013904223) >>> 0;
+  return (pool.rngState % 3) as 0 | 1 | 2;
 }
 
 export function createObstaclePoolState(): ObstaclePoolState {
@@ -77,6 +83,7 @@ export function activateObstacleFromSpawn(
   slot.height = dimensions.height;
   slot.spawnRequestId = params.spawnRequestId;
   slot.laneIndex = params.laneIndex;
+  slot.treeVisualVariant = params.variant === 'tree' ? pickTreeVisualVariant(pool) : 0;
   slot.active = true;
 
   pool.activeCount += 1;
@@ -90,6 +97,7 @@ export function deactivateObstacle(slot: ObstacleRecord, pool: ObstaclePoolState
   slot.active = false;
   slot.id = 0;
   slot.spawnRequestId = 0;
+  slot.treeVisualVariant = 0;
   pool.activeCount -= 1;
   if (pool.activeCount < 0) {
     pool.activeCount = 0;

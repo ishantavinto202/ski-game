@@ -19,7 +19,7 @@ import { CollisionBurstRenderer } from '../ui/CollisionBurstRenderer';
 import { GameplayFeedbackRenderer } from '../ui/GameplayFeedbackRenderer';
 import { ShieldShatterRenderer } from '../ui/ShieldShatterRenderer';
 import { ChaserRenderer } from '../ui/ChaserRenderer';
-import { SnowTrailRenderer } from '../ui/SnowTrailRenderer';
+import { SkiTrackRenderer } from '../ui/SkiTrackRenderer';
 import { TouchControls } from '../ui/TouchControls';
 import { WorldRenderer } from '../ui/WorldRenderer';
 import { EdgeTreeRenderer } from '../ui/EdgeTreeRenderer';
@@ -45,6 +45,7 @@ export const SkiGameViewport = memo(function SkiGameViewport() {
     <View style={viewportStyle.root} onLayout={onLayout}>
       <SkiGameBackground />
       {viewport ? <WorldRenderer viewport={viewport} /> : null}
+      {viewport ? <SkiTrackRenderer viewport={viewport} /> : null}
       {viewport && GAME_CONFIG.DECORATIVE_TREES_ENABLED ? (
         <EdgeTreeRenderer viewport={viewport} />
       ) : null}
@@ -53,10 +54,9 @@ export const SkiGameViewport = memo(function SkiGameViewport() {
       {viewport ? <SpeedBoostRenderer viewport={viewport} /> : null}
       {viewport ? <ShieldPickupRenderer viewport={viewport} /> : null}
       {viewport ? <ShieldRockOverlapDebug viewport={viewport} /> : null}
-      {viewport ? <SnowTrailRenderer viewport={viewport} /> : null}
       {viewport ? <CollisionBurstRenderer viewport={viewport} /> : null}
       {viewport ? <ShieldShatterRenderer viewport={viewport} /> : null}
-      <ChaserRenderer />
+      {playerSnapshot ? <ChaserRenderer /> : null}
       {playerSnapshot ? <ShieldBubbleRenderer player={playerSnapshot} /> : null}
       {playerSnapshot ? <PlayerRenderer player={playerSnapshot} /> : null}
       {viewport ? <GameplayFeedbackRenderer viewport={viewport} /> : null}

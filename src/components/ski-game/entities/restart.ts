@@ -24,6 +24,7 @@ import { resetCoinActiveLifecycleDebug } from '../utils/coin-active-lifecycle-de
 import { GAME_CONFIG } from '../utils/GameConfig';
 import { resetDecorativeTreePoolInPlace } from './DecorativeTree';
 import { getGameplayFeedbackPool, resetGameplayFeedbackPool } from '../effects/GameplayFeedback';
+import { getSkiTrackState, resetSkiTrackState } from '../effects/SkiTrack';
 import { resetChaserState, snapChaserBehindPlayer } from './Chaser';
 import { resetChaserPathState, resolvePlayerWorldY } from './ChaserPath';
 import { clearGameOverCacheState } from '../ui/GameOverTypes';
@@ -122,6 +123,7 @@ function resetObstacleSlotInPlace(slot: ObstacleRecord): void {
   slot.width = 0;
   slot.height = 0;
   slot.variant = 'small_rock';
+  slot.treeVisualVariant = 0;
 }
 
 function resetObstaclePoolInPlace(pool: ObstaclePoolState): void {
@@ -219,6 +221,7 @@ export function resetGame(engine: GameEngine): void {
   }
   resetGameOverCache(engine);
   resetGameplayFeedback(engine);
+  resetSkiTrackState(getSkiTrackState(engine));
   resetChaserVisual(engine);
 }
 

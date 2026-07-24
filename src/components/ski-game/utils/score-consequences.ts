@@ -4,18 +4,16 @@ import type { ScoreState } from '../types/score-state';
 export type ObstacleConsequence = {
   scoreDelta: number;
   healthDamage: number;
-  /** Gap reduction applied to the Chaser on an accepted (unshielded) hit. */
-  chasePressure: number;
 };
 
-/** Authoritative gameplay score / damage / chase-pressure values for obstacle hits. */
+/** Authoritative gameplay score / damage values for obstacle hits. */
 export const OBSTACLE_CONSEQUENCES: Record<ObstacleVariant, ObstacleConsequence> = {
-  small_rock: { scoreDelta: -15, healthDamage: 0, chasePressure: 8 },
-  tree_stump: { scoreDelta: -20, healthDamage: 0, chasePressure: 10 },
-  large_boulder: { scoreDelta: -30, healthDamage: 1, chasePressure: 15 },
-  tree: { scoreDelta: -25, healthDamage: 1, chasePressure: 15 },
-  wooden_fence: { scoreDelta: -35, healthDamage: 1, chasePressure: 20 },
-  cabin: { scoreDelta: -50, healthDamage: 2, chasePressure: 30 },
+  small_rock: { scoreDelta: -15, healthDamage: 0 },
+  tree_stump: { scoreDelta: -20, healthDamage: 0 },
+  large_boulder: { scoreDelta: -30, healthDamage: 1 },
+  tree: { scoreDelta: -25, healthDamage: 1 },
+  wooden_fence: { scoreDelta: -35, healthDamage: 1 },
+  cabin: { scoreDelta: -50, healthDamage: 2 },
 };
 
 /** Score awarded per collected coin (independent of coin count stat). */
