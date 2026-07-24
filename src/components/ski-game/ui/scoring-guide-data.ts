@@ -1,13 +1,5 @@
 import type { ImageSourcePropType } from 'react-native';
 
-import {
-  cabinAsset,
-  largeBoulderAsset,
-  smallRockAsset,
-  treeStumpAsset,
-  treeVisualAssets,
-  woodenFenceAsset,
-} from '../utils/obstacle-assets';
 import { GAME_CONFIG } from '../utils/GameConfig';
 import {
   COIN_COLLECT_SCORE,
@@ -16,6 +8,13 @@ import {
 } from '../utils/score-consequences';
 
 import type { ScoringGuideItem } from './ScoringGuideTypes';
+
+const smallRockAsset = require('../../../../assets/obstacles/Small Rock.png') as number;
+const largeBoulderAsset = require('../../../../assets/obstacles/Big Rock.png') as number;
+const treeStumpAsset = require('../../../../assets/obstacles/Stump.png') as number;
+const cabinAsset = require('../../../../assets/obstacles/cabin.png') as number;
+const woodenFenceAsset = require('../../../../assets/obstacles/Fence.png') as number;
+const treeGuideAsset = require('../../../../assets/obstacles/Big Tree (Tree 1).png') as number;
 
 const COIN_ATLAS = require('../../../../assets/assets/Coin Animations/texture.png') as number;
 const SHIELD_ATLAS =
@@ -135,7 +134,7 @@ export const OBSTACLE_GUIDE_ITEMS: readonly ScoringGuideItem[] = [
     category: 'obstacle',
     title: 'Tree',
     description: 'Avoid the alpine trees',
-    asset: treeVisualAssets[0] as ImageSourcePropType,
+    asset: treeGuideAsset as ImageSourcePropType,
     primaryEffect: treeEffects.primaryEffect,
     secondaryEffect: treeEffects.secondaryEffect,
     effectTone: treeEffects.effectTone,
