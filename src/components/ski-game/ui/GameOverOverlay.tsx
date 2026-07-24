@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useMemo } from 'react';
+import { memo, useCallback, useEffect, useMemo, useState } from 'react';
 import { Pressable, StyleSheet, Text, TextInput, View, type TextStyle } from 'react-native';
 import Animated, {
   useAnimatedProps,
@@ -19,6 +19,8 @@ import {
   readGameOverSummaryFromRefs,
   type GameOverOverlayProps,
 } from './GameOverTypes';
+import { ScoringGuideInfoButton } from './ScoringGuideInfoButton';
+import { ScoringGuideOverlay } from './ScoringGuideOverlay';
 
 const AnimatedTextInput = Animated.createAnimatedComponent(TextInput);
 
@@ -33,9 +35,11 @@ const overlayStyles = StyleSheet.create({
     backgroundColor: 'rgba(15, 23, 42, 0.42)',
   },
   panel: {
+    position: 'relative',
     minWidth: 260,
+    paddingTop: 28,
+    paddingBottom: 24,
     paddingHorizontal: 28,
-    paddingVertical: 24,
     borderRadius: 12,
     borderWidth: 2,
     borderColor: SKI_GAME_COLORS.playerPlaceholderBorder,
@@ -175,10 +179,19 @@ export const GameOverOverlay = memo(function GameOverOverlay({
     onQuitPress();
   }, [onQuitPress]);
 
+  const [isScoringGuideOpen, setIsScoringGuideOpen] = useState(false);
+  const handleOpenScoringGuide = useCallback(() => {
+    setIsScoringGuideOpen(true);
+  }, []);
+  const handleCloseScoringGuide = useCallback(() => {
+    setIsScoringGuideOpen(false);
+  }, []);
+
   return (
     <Animated.View style={[rootStyle, containerStyle]} pointerEvents="auto">
       <View style={overlayStyles.scrim} pointerEvents="none" />
       <View style={overlayStyles.panel}>
+        <ScoringGuideInfoButton onPress={handleOpenScoringGuide} />
         <Text style={overlayStyles.title}>GAME OVER</Text>
         <View style={overlayStyles.statRow}>
           <Text style={overlayStyles.statLabel}>Score</Text>
@@ -205,6 +218,7 @@ export const GameOverOverlay = memo(function GameOverOverlay({
           </Pressable>
         </View>
       </View>
+      {isScoringGuideOpen ? <ScoringGuideOverlay onClose={handleCloseScoringGuide} /> : null}
     </Animated.View>
   );
 });
