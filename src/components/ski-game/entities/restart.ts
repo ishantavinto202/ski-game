@@ -2,6 +2,7 @@ import { createPlayerForViewport } from './Player';
 import type { GameEngine } from '../engine/GameEngine';
 import { createInitialInputState } from '../types/InputTypes';
 import { resetHealthState } from '../types/HealthTypes';
+import { resetScoreState } from '../types/score-state';
 import { resetCollisionState } from '../types/CollisionTypes';
 import { createInitialTimeState } from '../types/time-state';
 import { createInitialWorldState } from '../types/world-state';
@@ -22,6 +23,7 @@ import { resetCoinSchedulingDebugCounters } from '../utils/coin-scheduling-debug
 import { resetCoinActiveLifecycleDebug } from '../utils/coin-active-lifecycle-debug';
 import { GAME_CONFIG } from '../utils/GameConfig';
 import { resetDecorativeTreePoolInPlace } from './DecorativeTree';
+import { getGameplayFeedbackPool, resetGameplayFeedbackPool } from '../effects/GameplayFeedback';
 import { clearGameOverCacheState } from '../ui/GameOverTypes';
 
 function resetGameStateRef(engine: GameEngine): void {
@@ -75,6 +77,10 @@ function resetWorldState(engine: GameEngine): void {
 
 function resetCameraState(engine: GameEngine): void {
   engine.cameraRef.current.offsetX = createInitialCameraState().offsetX;
+}
+
+function resetScoreStateRef(engine: GameEngine): void {
+  resetScoreState(engine.scoreRef.current);
 }
 
 function resetHealthStateRef(engine: GameEngine): void {
@@ -177,6 +183,10 @@ function resetSpawnManagerPreservingLayout(spawn: SpawnManagerState): void {
   resetSpawnPopulationState(spawn);
 }
 
+function resetGameplayFeedback(engine: GameEngine): void {
+  resetGameplayFeedbackPool(getGameplayFeedbackPool(engine));
+}
+
 function resetGameOverCache(engine: GameEngine): void {
   clearGameOverCacheState(engine.gameOverCacheRef.current);
 }
@@ -195,6 +205,7 @@ export function resetGame(engine: GameEngine): void {
   resetWorldState(engine);
   resetCameraState(engine);
   resetHealthStateRef(engine);
+  resetScoreStateRef(engine);
   resetCollisionStateRef(engine);
   resetCoinPoolInPlace(engine.coinRef.current);
   resetObstaclePoolInPlace(engine.obstacleRef.current);
@@ -205,4 +216,5 @@ export function resetGame(engine: GameEngine): void {
     resetDecorativeTreePoolInPlace(engine.decorativeTreeRef.current);
   }
   resetGameOverCache(engine);
+  resetGameplayFeedback(engine);
 }

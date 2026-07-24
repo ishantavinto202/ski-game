@@ -374,6 +374,76 @@ export function isShieldPickupBlockedByActiveObstacles(
   return isActiveObstacleAreaOccupied(testFootprint, obstaclePool);
 }
 
+function isPickupWorldYTooClose(candidateWorldY: number, otherWorldY: number): boolean {
+  const delta = candidateWorldY - otherWorldY;
+  const distance = delta < 0 ? -delta : delta;
+  return distance < GAME_CONFIG.PICKUP_MIN_VERTICAL_SEPARATION;
+}
+
+/**
+ * Rejects candidates whose worldY is too close to any pending or active pickup.
+ * Solves same-tick coin → speed_boost sharing `baseWorldY` without a fixed offset pattern.
+ */
+export function isPickupVerticalSeparationBlocked(
+  candidateWorldY: number,
+  coinPool: CoinPoolState,
+  shieldPool: ShieldPoolState,
+  speedBoostPool: SpeedBoostPoolState,
+  pendingRequests: readonly SpawnRequest[],
+  pendingCount: number,
+): boolean {
+  const cappedPending =
+    pendingCount < pendingRequests.length ? pendingCount : pendingRequests.length;
+  for (let index = 0; index < cappedPending; index += 1) {
+    const request = pendingRequests[index];
+    if (
+      request.kind !== 'coin' &&
+      request.kind !== 'shield' &&
+      request.kind !== 'speed_boost'
+    ) {
+      continue;
+    }
+    if (isPickupWorldYTooClose(candidateWorldY, request.worldY)) {
+      return true;
+    }
+  }
+
+  const coins = coinPool.coins;
+  for (let index = 0; index < coins.length; index += 1) {
+    const coin = coins[index];
+    if (!coin.active) {
+      continue;
+    }
+    if (isPickupWorldYTooClose(candidateWorldY, coin.worldY)) {
+      return true;
+    }
+  }
+
+  const shields = shieldPool.shields;
+  for (let index = 0; index < shields.length; index += 1) {
+    const shield = shields[index];
+    if (!shield.active) {
+      continue;
+    }
+    if (isPickupWorldYTooClose(candidateWorldY, shield.worldY)) {
+      return true;
+    }
+  }
+
+  const speedBoosts = speedBoostPool.speedBoosts;
+  for (let index = 0; index < speedBoosts.length; index += 1) {
+    const speedBoost = speedBoosts[index];
+    if (!speedBoost.active) {
+      continue;
+    }
+    if (isPickupWorldYTooClose(candidateWorldY, speedBoost.worldY)) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
 export function findClearPatternOriginY(
   pattern: SpawnPattern,
   startOriginY: number,
@@ -431,6 +501,9 @@ export function findClearPickupSpawn(
   playableOriginX: number,
   kind: PickupSpawnKind,
   obstaclePool: ObstaclePoolState,
+  coinPool: CoinPoolState,
+  shieldPool: ShieldPoolState,
+  speedBoostPool: SpeedBoostPoolState,
   pendingRequests: readonly SpawnRequest[],
   pendingCount: number,
 ): { worldX: number; worldY: number; laneIndex: number } | null {
@@ -450,6 +523,19 @@ export function findClearPickupSpawn(
 
   for (let yBand = 0; yBand < yBandLimit; yBand += 1) {
     const worldY = baseWorldY + yBand * SPAWN_PICKUP_WORLD_Y_RETRY_STEP;
+
+    if (
+      isPickupVerticalSeparationBlocked(
+        worldY,
+        coinPool,
+        shieldPool,
+        speedBoostPool,
+        pendingRequests,
+        pendingCount,
+      )
+    ) {
+      continue;
+    }
 
     for (let laneOffset = 0; laneOffset < laneCount; laneOffset += 1) {
       if (probes >= SPAWN_VALIDATION_PICKUP_MAX_SEARCH_ATTEMPTS) {

@@ -15,6 +15,7 @@ export type {
 } from './ObstacleTypes';
 export type { CollisionState } from './CollisionTypes';
 export type { HealthState } from './HealthTypes';
+export type { ScoreState } from './score-state';
 export type { DifficultyState } from './DifficultyTypes';
 export { createInitialDifficultyState, syncDifficultyFromElapsed } from './DifficultyTypes';
 export type {
@@ -44,6 +45,7 @@ export {
 export { OBSTACLE_VARIANT_DIMENSIONS, OBSTACLE_VARIANT_SEQUENCE } from './ObstacleTypes';
 export { createInitialCollisionState, resetCollisionState } from './CollisionTypes';
 export { createInitialHealthState, resetHealthState } from './HealthTypes';
+export { createInitialScoreState, resetScoreState } from './score-state';
 export type { InputState, InputActions } from './InputTypes';
 export { createInitialTimeState } from './time-state';
 export { createInitialWorldState } from './world-state';

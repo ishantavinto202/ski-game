@@ -14,6 +14,7 @@ import { aabbIntersectsWithPadding } from '../utils/collision';
 import { GAME_CONFIG } from '../utils/GameConfig';
 import {
   isSpawnRequestPastDespawn,
+  copySpawnRequestToWriteIndex,
   retainFailedSpawnRequest,
 } from '../utils/spawn-request-intake';
 import { worldYCenterToScreenY } from '../utils/world-coordinates';
@@ -64,9 +65,7 @@ export class SpeedBoostSystem implements GameSystem {
     for (let readIndex = 0; readIndex < pendingCount; readIndex += 1) {
       const request = requests[readIndex];
       if (request.kind !== 'speed_boost') {
-        if (writeIndex !== readIndex) {
-          requests[writeIndex] = request;
-        }
+        copySpawnRequestToWriteIndex(requests, writeIndex, readIndex, request);
         writeIndex += 1;
         continue;
       }

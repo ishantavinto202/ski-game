@@ -34,12 +34,19 @@ export type SpawnManagerState = {
   requests: SpawnRequest[];
 };
 
-/** Coin/shield rotation ticks; fourth slot is obstacle (no pickup) to preserve cadence after speed split. */
+/**
+ * Deterministic pickup rotation (obstacle slots advance cadence only).
+ * Coins appear twice as often as each powerup; shield and speed_boost are independent.
+ */
 export const SPAWN_KIND_SEQUENCE: readonly SpawnKind[] = [
   'obstacle',
   'coin',
+  'obstacle',
   'shield',
   'obstacle',
+  'coin',
+  'obstacle',
+  'speed_boost',
 ];
 
 export const MAX_PENDING_SPAWN_REQUESTS = 72;

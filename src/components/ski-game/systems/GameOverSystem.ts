@@ -37,6 +37,7 @@ export class GameOverSystem implements GameSystem {
     captureGameOverSummary(
       engine.gameOverCacheRef.current,
       readGameOverSummaryFromRefs({
+        scoreRef: engine.scoreRef,
         timeRef: engine.timeRef,
         coinRef: engine.coinRef,
         healthRef: engine.healthRef,

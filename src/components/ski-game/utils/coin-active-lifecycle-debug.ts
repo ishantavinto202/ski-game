@@ -6,7 +6,7 @@ import { worldYCenterToScreenY, screenYToWorldY } from './world-coordinates';
 import { GAME_CONFIG } from './GameConfig';
 
 /** Temporary — tracks active coins vs player until collected/despawned/deactivated. */
-export const COIN_ACTIVE_LIFECYCLE_DEBUG_ENABLED = true;
+export const COIN_ACTIVE_LIFECYCLE_DEBUG_ENABLED = false;
 
 const LOG_INTERVAL_MS = 1000;
 

@@ -13,6 +13,7 @@ import { logCabinSpawned } from '../utils/cabin-debug';
 import { GAME_CONFIG } from '../utils/GameConfig';
 import {
   isSpawnRequestPastDespawn,
+  copySpawnRequestToWriteIndex,
   retainFailedSpawnRequest,
 } from '../utils/spawn-request-intake';
 
@@ -58,9 +59,7 @@ export class ObstacleSystem implements GameSystem {
     for (let readIndex = 0; readIndex < pendingCount; readIndex += 1) {
       const request = requests[readIndex];
       if (request.kind !== 'obstacle') {
-        if (writeIndex !== readIndex) {
-          requests[writeIndex] = request;
-        }
+        copySpawnRequestToWriteIndex(requests, writeIndex, readIndex, request);
         writeIndex += 1;
         continue;
       }

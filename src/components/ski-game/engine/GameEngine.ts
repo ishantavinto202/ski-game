@@ -1,32 +1,33 @@
-import type { Player } from '../entities/Player';
-import type { EngineRef } from '../types/engine-ref';
-import { createInitialInputState, type InputActions, type InputState } from '../types/InputTypes';
-import { createInitialHealthState, type HealthState } from '../types/HealthTypes';
-import { createInitialCollisionState, type CollisionState } from '../types/CollisionTypes';
 import { createCoinPoolState } from '../entities/Coin';
-import type { CoinPoolState } from '../types/CoinTypes';
-import { createShieldPoolState } from '../entities/Shield';
-import type { ShieldPoolState } from '../types/ShieldTypes';
-import { createSpeedBoostPoolState } from '../entities/SpeedBoost';
-import type { SpeedBoostPoolState } from '../types/SpeedBoostTypes';
-import { createObstaclePoolState } from '../entities/Obstacle';
-import type { ObstaclePoolState } from '../types/ObstacleTypes';
 import { createDecorativeTreePoolState } from '../entities/DecorativeTree';
-import type { DecorativeTreePoolState } from '../types/DecorativeTreeTypes';
-import { createInitialSpawnManagerState, type SpawnManagerState } from '../types/SpawnTypes';
+import { createObstaclePoolState } from '../entities/Obstacle';
+import type { Player } from '../entities/Player';
+import { createShieldPoolState } from '../entities/Shield';
+import { createSpeedBoostPoolState } from '../entities/SpeedBoost';
+import type { GameSystem } from '../types';
 import { createInitialCameraState, type CameraState } from '../types/camera-state';
-import { createInitialPlayerFeelState, type PlayerFeelState } from '../types/player-feel-state';
-import { createInitialMovementState, type MovementState } from '../types/movement-state';
-import { createInitialTimeState, type TimeState } from '../types/time-state';
-import { createInitialWorldState, type WorldState } from '../types/world-state';
+import type { CoinPoolState } from '../types/CoinTypes';
+import { createInitialCollisionState, type CollisionState } from '../types/CollisionTypes';
+import type { DecorativeTreePoolState } from '../types/DecorativeTreeTypes';
 import { createInitialDifficultyState, type DifficultyState } from '../types/DifficultyTypes';
+import type { EngineRef } from '../types/engine-ref';
 import {
   createInitialGameStateRefState,
   GAME_STATE_SYSTEM_ID,
   type GameStateRefState,
 } from '../types/GameStateTypes';
+import { createInitialHealthState, type HealthState } from '../types/HealthTypes';
+import { createInitialInputState, type InputActions, type InputState } from '../types/InputTypes';
+import { createInitialMovementState, type MovementState } from '../types/movement-state';
+import type { ObstaclePoolState } from '../types/ObstacleTypes';
+import { createInitialPlayerFeelState, type PlayerFeelState } from '../types/player-feel-state';
+import type { ShieldPoolState } from '../types/ShieldTypes';
+import { createInitialSpawnManagerState, type SpawnManagerState } from '../types/SpawnTypes';
+import type { SpeedBoostPoolState } from '../types/SpeedBoostTypes';
+import { createInitialTimeState, type TimeState } from '../types/time-state';
+import { createInitialWorldState, type WorldState } from '../types/world-state';
 import { createInitialGameOverCacheState, type GameOverCacheState } from '../ui/GameOverTypes';
-import type { GameSystem } from '../types';
+import { createInitialScoreState, type ScoreState } from '../types/score-state';
 
 export type ViewportSize = {
   width: number;
@@ -52,6 +53,7 @@ export class GameEngine {
   };
   readonly collisionRef: EngineRef<CollisionState> = { current: createInitialCollisionState() };
   readonly healthRef: EngineRef<HealthState> = { current: createInitialHealthState() };
+  readonly scoreRef: EngineRef<ScoreState> = { current: createInitialScoreState() };
   readonly coinRef: EngineRef<CoinPoolState> = { current: createCoinPoolState() };
   readonly shieldRef: EngineRef<ShieldPoolState> = { current: createShieldPoolState() };
   readonly speedBoostRef: EngineRef<SpeedBoostPoolState> = { current: createSpeedBoostPoolState() };

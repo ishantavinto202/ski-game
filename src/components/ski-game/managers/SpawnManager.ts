@@ -19,10 +19,10 @@ import {
 
 export const SPAWN_MANAGER_ID = 'spawn-manager';
 
-type RotatingPickupKind = 'coin' | 'shield';
+type RotatingPickupKind = 'coin' | 'shield' | 'speed_boost';
 
 function isRotatingPickupKind(kind: SpawnKind): kind is RotatingPickupKind {
-  return kind === 'coin' || kind === 'shield';
+  return kind === 'coin' || kind === 'shield' || kind === 'speed_boost';
 }
 
 function resolveSpawnIntervalMultiplier(engine: GameEngine): number {
@@ -83,6 +83,9 @@ function tryEnqueuePickupSpawn(
     spawnState.playableOriginX,
     kind,
     engine.obstacleRef.current,
+    engine.coinRef.current,
+    engine.shieldRef.current,
+    engine.speedBoostRef.current,
     spawnState.requests,
     spawnState.pendingCount,
   );
@@ -159,13 +162,9 @@ function tickRotatingPickupSpawn(
 
   if (isRotatingPickupKind(selectedKind) && canEnqueue) {
     tryEnqueuePickupSpawn(engine, spawnState, selectedKind);
-
-    if (selectedKind === 'coin') {
-      tryEnqueuePickupSpawn(engine, spawnState, 'speed_boost');
-    }
   }
 
-  // Always advance pickup/shield/coin cadence — never stall the rotation on a failed placement.
+  // Always advance pickup cadence — never stall the rotation on a failed placement.
   spawnState.kindCursor = (spawnState.kindCursor + 1) % SPAWN_KIND_SEQUENCE.length;
 }
 

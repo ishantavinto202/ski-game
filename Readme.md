@@ -184,7 +184,7 @@ The Ski Game lives under `src/components/ski-game/` as a self-contained module. 
 
 **Obstacle layout:** Patterns respect `OBSTACLE_MIN_SAFE_LANE_WIDTH_RATIO` and `OBSTACLE_MAX_PATTERN_WIDTH_RATIO`, computed via `minSafeLaneWidthPx()` / `maxObstaclePatternWidthPx()` from the live viewport width.
 
-**HUD (portrait):** Hearts, coins, and distance top-left; **ActiveEffectDurationHud** top-center (⚡ speed + 🛡 shield bars while active); **PauseButton** top-right (safe area). Metrics from `engine.onFrame` refs only.
+**HUD (portrait):** Hearts, score, and distance top-left; **ActiveEffectDurationHud** top-center (⚡ speed + 🛡 shield bars while active); **PauseButton** top-right (safe area). Metrics from `engine.onFrame` refs only.
 
 ## Folder layout
 
@@ -314,7 +314,7 @@ Detects zero health during play and shows a summary overlay.
 
 **Gameplay rule:** **GameOverSystem** never assigns `gameStateRef.currentState`; only **GameStateSystem** applies `game_over` from `pendingTransition`.
 
-**Overlay (read-only refs):** `timeRef`, `coinRef`, `healthRef` via `readGameOverSummaryFromRefs`. **Play Again** default → `playAgain(engine)` (**Restart**). **Quit** → optional prop (placeholder no-op).
+**Overlay (read-only refs):** `scoreRef`, `timeRef`, `coinRef`, `healthRef` via `readGameOverSummaryFromRefs`. **Play Again** default → `playAgain(engine)` (**Restart**). **Quit** → optional prop (placeholder no-op).
 
 **`engine.gameOverCacheRef`:** snapshot written at game over; cleared by `resetGame`.
 
@@ -353,7 +353,7 @@ In-place session reset without recreating **GameEngine** or reallocating pool ar
 3. **Time** → elapsed, distance, delta, `fixedAccumulatorMs` (see **GameLoop**)
 4. **Difficulty** → baseline elapsed, level, multipliers
 5. **World / camera** → scroll and offset zero
-6. **Health / collision** → full health, no invulnerability; collision cleared
+6. **Health / score / collision** → full health, score 0, no invulnerability; collision cleared
 7. **Coins / obstacles / shields / speed boosts** → deactivate every pooled slot in place, `activeCount` 0, reset counters/effects
 8. **Spawn manager** → clear pending queue, reset timers/cursors (lane layout preserved)
 9. **Game over cache** → cleared
@@ -466,13 +466,13 @@ World-space spawn **requests** only — no entities, rendering, or collision. St
 | `utils/spawn-validation.ts` | Shared spawn footprints + occupancy checks (pool + pending obstacles) |
 | `utils/edge-tree-spawn.ts` | Continuous decorative edge trees (no **SpawnRequest**) |
 | `utils/spawn-requests.ts` | `clearPendingSpawnRequests()` for reset |
-| `utils/spawn-request-intake.ts` | Stale spawn drop + retain-on-failed-activation helpers for entity systems |
+| `utils/spawn-request-intake.ts` | Stale spawn drop, retain-on-failed-activation, and **clone-on-compact** so pending slots never alias the same object |
 
 **GameConfig (spawn):**
 
 | Key | Default | Meaning |
 |-----|---------|---------|
-| `SPAWN_INTERVAL` | `1200` | Ms between **coin/shield** rotation ticks (`kindCursor` on `SPAWN_KIND_SEQUENCE`) |
+| `SPAWN_INTERVAL` | `1200` | Ms between pickup rotation ticks (`kindCursor` on `SPAWN_KIND_SEQUENCE`) |
 | `SPAWN_LOOKAHEAD_DISTANCE` | `600` | World Y lead for initial population cursor (pickups use `POPULATION_LOOKAHEAD`) |
 | `PLAYABLE_WORLD_PADDING` | `16` | Horizontal inset for lane layout and spawn X |
 | `POPULATION_LOOKAHEAD` | `900` | Extend sequential pattern generation until `nextPatternOriginY` reaches this lead above scroll top |
@@ -484,6 +484,7 @@ World-space spawn **requests** only — no entities, rendering, or collision. St
 | `SPAWN_VALIDATION_PICKUP_MAX_SEARCH_ATTEMPTS` | `288` | Hard cap on occupancy probes per pickup placement search |
 | `SPAWN_PICKUP_WORLD_Y_SEARCH_BANDS` | `36` | Upstream Y bands scanned from pickup base Y (× retry step) |
 | `SPAWN_PICKUP_WORLD_Y_RETRY_STEP` | `36` | World Y offset between pickup placement bands |
+| `PICKUP_MIN_VERTICAL_SEPARATION` | `64` | Min \|ΔworldY\| between pickup centers (pending + active) |
 | `EDGE_TREE_CLUSTER_SIZE_MIN` / `MAX` | `2` / `4` | Trees per decorative edge cluster (each side) |
 | `EDGE_TREE_IN_CLUSTER_SPACING_MIN` / `MAX` | `88` / `124` | Vertical spacing between trees inside a cluster |
 | `EDGE_TREE_CLUSTER_GAP_MIN` / `MAX` | `320` / `560` | Open slope (px) after a cluster before the next cluster |
@@ -492,9 +493,9 @@ World-space spawn **requests** only — no entities, rendering, or collision. St
 | `MAX_DECORATIVE_TREES` | `128` | Decorative tree pool (no collision) |
 | `MAX_PENDING_SPAWN_REQUESTS` | `72` | Pre-allocated spawn buffer slots |
 
-**Lanes:** Recomputed on viewport layout from playable width (`viewport − 2× padding`) and `OBSTACLE_MIN_SAFE_LANE_WIDTH_RATIO` (3–8 lanes). **Coin/shield** use `elapsedSinceLastSpawnMs` + `kindCursor` on `SPAWN_KIND_SEQUENCE` (`obstacle` → `coin` → `shield` → `obstacle`). On each **coin** rotation tick, **SpawnManager** also attempts a separate **`speed_boost`** enqueue (same cadence as coin, no extra timer). Obstacles come from population maintenance. Each fixed step, **pickup rotation runs before lookahead population** so pickup validation does not treat same-frame obstacle queue rows as occupied.
+**Lanes:** Recomputed on viewport layout from playable width (`viewport − 2× padding`) and `OBSTACLE_MIN_SAFE_LANE_WIDTH_RATIO` (3–8 lanes). Pickup kinds use `elapsedSinceLastSpawnMs` + `kindCursor` on `SPAWN_KIND_SEQUENCE` (`obstacle` → `coin` → `obstacle` → `shield` → `obstacle` → `coin` → `obstacle` → `speed_boost`). Each pickup kind (including **speed_boost**) gets its own turn — no coin→boost piggyback. Obstacles come from population maintenance. Each fixed step, **pickup rotation runs before lookahead population** so pickup validation does not treat same-frame obstacle queue rows as occupied.
 
-**Spawn intake:** **ObstacleSystem**, **CoinSystem**, **ShieldSystem**, and **SpeedBoostSystem** remove a **SpawnRequest** from `pending` only after pool activation succeeds. Failed activations stay queued for retry; **`utils/spawn-request-intake.ts`** drops requests whose world Y is already past the below-viewport despawn line (stale / invalid).
+**Spawn intake:** **ObstacleSystem**, **CoinSystem**, **ShieldSystem**, and **SpeedBoostSystem** remove a **SpawnRequest** from `pending` only after pool activation succeeds. Failed activations stay queued for retry; **`utils/spawn-request-intake.ts`** drops requests whose world Y is already past the below-viewport despawn line (stale / invalid). When compacting the pending buffer, systems **clone** rows into the write index (instead of copying object references) so a later pickup enqueue cannot overwrite an earlier pending coin via shared slot objects.
 
 ### Lookahead population (gameplay obstacles)
 
@@ -523,7 +524,7 @@ Grouped exports for future weighting (unused by spawn pick today): **`SPAWN_PATT
 
 Adding a pattern = append one **`SpawnPattern`** in **`managers/SpawnPatterns.ts`** (no gameplay system changes).
 
-**Pickup scheduling:** **Coin** and **shield** share `SPAWN_INTERVAL` and advance `kindCursor` on `['obstacle','coin','shield','obstacle']` (obstacle steps advance cadence only). On **`coin`** ticks only, **SpawnManager** runs a second **`findClearPickupSpawn`** pass for **`speed_boost`**. **`kindCursor` always advances after each coin/shield tick** (even when enqueue fails or the pending buffer is full) so a failed **shield** placement cannot freeze the schedule before the next **coin** turn. Pickup base world Y uses **`max(POPULATION_LOOKAHEAD, nextPatternOriginY)`**. **`findClearPickupSpawn`** validates against **active obstacles only** (not pending obstacle queue rows, which over-blocked placement).
+**Pickup scheduling:** **Coin**, **shield**, and **speed_boost** share `SPAWN_INTERVAL` and advance `kindCursor` on `['obstacle','coin','obstacle','shield','obstacle','coin','obstacle','speed_boost']` (obstacle steps advance cadence only). Relative frequency per cycle: **2 coins : 1 shield : 1 speed_boost**. **`kindCursor` always advances after each pickup tick** (even when enqueue fails or the pending buffer is full). Pickup base world Y uses **`max(POPULATION_LOOKAHEAD, nextPatternOriginY)`**. **`findClearPickupSpawn`** validates against **active obstacles** (not pending obstacle queue rows) and rejects Y bands within **`PICKUP_MIN_VERTICAL_SEPARATION`** of pending or active pickups.
 
 **Consumers:** **ObstacleSystem** uses `request.obstacleVariant` when set; otherwise falls back to the pool’s weighted variant picker. Other systems unchanged.
 
@@ -602,7 +603,7 @@ Pooled obstacles in world space (**ObstacleSystem**) with separate presentation 
 
 **Rendering flow:**
 
-1. **SkiGameViewport** layer order: **WorldRenderer** → **ObstacleRenderer** → **CoinRenderer** → **SpeedBoostRenderer** → **ShieldPickupRenderer** → **SnowTrailRenderer** → **CollisionBurstRenderer** → **ShieldShatterRenderer** → **PlayerRenderer** → **ShieldBubbleRenderer** → **Hud** → **TouchControls** → **PauseButton** → **PauseOverlay** → **GameOverOverlay**.
+1. **SkiGameViewport** layer order: **WorldRenderer** → **ObstacleRenderer** → **CoinRenderer** → **SpeedBoostRenderer** → **ShieldPickupRenderer** → **SnowTrailRenderer** → **CollisionBurstRenderer** → **ShieldShatterRenderer** → **PlayerRenderer** → **GameplayFeedbackRenderer** → **ShieldBubbleRenderer** → **Hud** → **TouchControls** → **PauseButton** → **PauseOverlay** → **GameOverOverlay**.
 2. Each frame, `engine.onFrame` updates shared values per fixed slot index (`obstacleRef.obstacles[i]`).
 3. Screen rect: center-anchored world position minus `worldRef.scrollOffsetY` and `cameraRef.offsetX`.
 4. Culled if outside viewport ± `OBSTACLE_RENDER_MARGIN` (`opacity` 0); inactive slots hidden.
@@ -647,29 +648,43 @@ const { hasCollision, obstacleId, obstacleType } = engine.collisionRef.current;
 
 ## Health
 
-Damage and invulnerability on `engine.healthRef` — no UI or game over. **HealthSystem** respects active shield immunity from `engine.shieldRef` (see **Shield**).
+Run score and per-variant obstacle consequences on `engine.scoreRef` / `engine.healthRef`. **HealthSystem** runs after **CollisionSystem** and applies centralized values from `utils/score-consequences.ts`. Active shield immunity from `engine.shieldRef` still blocks all obstacle consequences (score + health).
 
 | File | Role |
 |------|------|
 | `types/HealthTypes.ts` | `HealthState` (`currentHealth`, `maxHealth`, invulnerability fields) |
-| `systems/HealthSystem.ts` | Runs after **CollisionSystem**; applies damage from `collisionRef` |
+| `types/score-state.ts` | `ScoreState` (`currentScore`, `lastDistanceScoreBucket`; score floored at 0) |
+| `utils/score-consequences.ts` | `OBSTACLE_CONSEQUENCES`, `COIN_COLLECT_SCORE`, `DISTANCE_METERS_PER_SCORE_POINT`, `applyScoreDelta`, `applyDistanceScoreProgress` |
+| `systems/TimeSystem.ts` | Advances distance; awards silent +1 score per `DISTANCE_METERS_PER_SCORE_POINT` (`25`) meters via `scoreRef` |
+| `systems/HealthSystem.ts` | Runs after **CollisionSystem**; applies score + damage from `collisionRef` |
 
 **GameConfig (health):**
 
 | Key | Default | Meaning |
 |-----|---------|---------|
 | `PLAYER_MAX_HEALTH` | `3` | Starting hearts / max health |
-| `PLAYER_INVULNERABILITY_MS` | `1200` | I-frames after a hit (ms) |
+| `PLAYER_INVULNERABILITY_MS` | `1200` | I-frames after a damaging hit (ms) |
 
-**Damage flow (each fixed update, after CollisionSystem):**
+**Obstacle consequences (`OBSTACLE_CONSEQUENCES`):**
+
+| Variant | Score | Health |
+|---------|-------|--------|
+| `small_rock` | −15 | 0 |
+| `tree_stump` | −20 | 0 |
+| `large_boulder` | −30 | −1 |
+| `tree` | −25 | −1 |
+| `wooden_fence` | −35 | −1 |
+| `cabin` | −50 | −2 |
+
+**Consequence flow (each fixed update, after CollisionSystem):**
 
 1. Tick down `invulnerabilityRemainingMs`; set `isInvulnerable` when &gt; 0.
 2. If `!collisionRef.hasCollision`, clear `lastDamagingObstacleId` (overlap ended) and exit.
-3. If invulnerable, ignore collision (no damage).
-4. If `shieldRef.isShieldActive`, ignore collision damage but still record `lastDamagingObstacleId` and start `PLAYER_INVULNERABILITY_MS` (same bookkeeping as a hit; **ShieldSystem** consumes the effect later in the same fixed step).
-5. If `currentHealth <= 0`, no further damage; **GameOverSystem** requests `game_over` on the next check while still `playing`.
-6. If `collisionRef.obstacleId === lastDamagingObstacleId`, skip (same obstacle still overlapping).
-7. Otherwise −1 health, store `lastDamagingObstacleId`, start `PLAYER_INVULNERABILITY_MS` invulnerability.
+3. If invulnerable, ignore collision (no score or damage).
+4. If `collisionRef.obstacleId === lastDamagingObstacleId`, skip (same obstacle still overlapping).
+5. If `shieldRef.isShieldActive`, ignore score + damage but still record `lastDamagingObstacleId` and start `PLAYER_INVULNERABILITY_MS`.
+6. Otherwise apply `scoreDelta` via `applyScoreDelta` (`Math.max(0, score + delta)`).
+7. If `healthDamage > 0`, subtract (clamped), store `lastDamagingObstacleId`, start invulnerability. Score-only hits (0 HP) do **not** start i-frames.
 
 **Feedback:** While `isInvulnerable`, **PlayerRenderer** alternates opacity 1.0 / 0.35 on a 60 ms / 60 ms square wave derived from `invulnerabilityRemainingMs` (no extra timer).
 
@@ -680,13 +695,16 @@ const {
   isInvulnerable,
   invulnerabilityRemainingMs,
 } = engine.healthRef.current;
+const { currentScore } = engine.scoreRef.current;
 ```
 
-Internal `lastDamagingObstacleId` prevents multi-tick damage from one overlap. After separating from an obstacle, a new overlap can damage again once i-frames allow.
+Internal `lastDamagingObstacleId` prevents multi-tick score or damage from one overlap. After separating from an obstacle, a new overlap can apply consequences again once i-frames allow (or immediately for score-only obstacles).
 
 ## Coins
 
 Pooled collectibles — gameplay in **CoinSystem**, visuals in **CoinRenderer** (no audio or collection VFX).
+
+**Investigation archive (symptoms, prompts, fixes, open issues):** [`docs/COIN-PROBLEMS-INVESTIGATION.md`](docs/COIN-PROBLEMS-INVESTIGATION.md).
 
 | File | Role |
 |------|------|
@@ -712,7 +730,7 @@ Pooled collectibles — gameplay in **CoinSystem**, visuals in **CoinRenderer** 
 1. Mount allocates `MAX_COINS` inactive `CoinRecord` entries.
 2. Each fixed step: compact `spawnRef` — only `kind === 'coin'` spawns into free slots; other kinds preserved for other systems.
 3. World position from spawn request (`worldX`, `worldY` center-anchored for hit/render math). **`resolveCoinActivationWorldY`** re-anchors `worldY` upstream at pool activation if scroll has overtaken the enqueue-time Y so coins enter the viewport band before despawn.
-4. **Collection:** Player screen AABB vs coin screen rect (`scroll` + `camera`); uses `PLAYER_COLLISION_PADDING` + `COIN_COLLISION_PADDING`; on hit → deactivate slot, `totalCoinsCollected += 1`.
+4. **Collection:** Player screen AABB vs coin screen rect (`scroll` + `camera`); uses `PLAYER_COLLISION_PADDING` + `COIN_COLLISION_PADDING`; on hit → `applyScoreDelta(+COIN_COLLECT_SCORE)`, deactivate slot, `totalCoinsCollected += 1`.
 5. **Despawn:** When `worldY - scrollOffsetY > viewportHeight + COIN_DESPAWN_MARGIN`, return slot to pool (uncollected).
 
 ```ts
@@ -757,8 +775,10 @@ Short-lived pooled bursts — **presentation only**; gameplay systems unchanged.
 | File | Role |
 |------|------|
 | `effects/CollisionBurst.ts` | Pool (64), spawn on new obstacle overlap (`collisionRef`), tick + world→screen |
+| `effects/GameplayFeedback.ts` | Fixed pool (6), score/heart floaters at player screen position on applied consequences |
 | `effects/ShieldShatter.ts` | Pool (64), spawn when shield drops while colliding (post-**ShieldSystem** consume), tick + world→screen |
 | `ui/CollisionBurstRenderer.tsx` | Snow kick-up fragments at impact |
+| `ui/GameplayFeedbackRenderer.tsx` | Floating `±SCORE` / `−HEART(S)` feedback (Reanimated fade + rise) |
 | `ui/ShieldShatterRenderer.tsx` | Cyan shatter fragments at player |
 
 **Collision burst:** Observes `collisionRef.hasCollision` + new `obstacleId` (once per overlap). Spawns **8–12** light snow fragments at player impact; lifetime **250–350 ms**.
@@ -777,7 +797,7 @@ Pooled shield pickups and timed collision immunity — gameplay in **ShieldSyste
 | `entities/Shield.ts` | Pool factory, spawn/deactivate/collect helpers, `activateShieldEffect` / `consumeShieldEffect`, `shieldWorldToScreenRect`, duration tick |
 | `systems/ShieldSystem.ts` | Spawn intake, AABB collection, despawn, effect countdown, one-hit consume on obstacle collision, `engine.shieldRef` |
 | `utils/shield-render.ts` | Viewport culling helpers |
-| `ui/ShieldPickupRenderer.tsx` | Fixed `MAX_SHIELDS` memo slots; Reanimated cyan circular 🛡 placeholders |
+| `ui/ShieldPickupRenderer.tsx` | Fixed `MAX_SHIELDS` memo slots; Reanimated atlas sprite (~12 FPS loop from `shield-sprite.json` / `shield-sprite.png`) |
 | `ui/ShieldBubbleRenderer.tsx` | Protective bubble on player while `isShieldActive` (Reanimated pulse) |
 
 **GameConfig (shield):**
@@ -807,7 +827,7 @@ Pooled shield pickups and timed collision immunity — gameplay in **ShieldSyste
 2. Each frame, `engine.onFrame` updates shared values per fixed slot index (`shieldRef.shields[i]`).
 3. Screen rect: `shieldWorldToScreenRect` — same center-anchored math as collection in **ShieldSystem**.
 4. Culled if outside viewport ± `SHIELD_RENDER_MARGIN` (`opacity` 0); inactive slots hidden.
-5. Placeholder: circle sized to `SHIELD_WORLD_SIZE` (32×32), white fill, **3 px** bright cyan border, 🛡 icon — distinct from gold coins and blue speed boosts.
+5. **Atlas animation:** `assets/assets/Shield Animations/shield-sprite.png` + `shield-sprite.json` (TexturePacker frames sorted **1–25** by name, not atlas grid order); clip + translate crop at **~12 FPS** from `timeRef.elapsedMs`; drawn contain-fit inside `SHIELD_WORLD_SIZE` (32×32 world box — gameplay geometry unchanged).
 
 **Shield bubble (presentation):**
 
@@ -835,7 +855,7 @@ Pooled speed boost pickups and timed scroll multiplier — gameplay in **SpeedBo
 | `entities/SpeedBoost.ts` | Pool factory, spawn/deactivate/collect helpers, `speedBoostWorldToScreenRect`, duration tick, `resolveScrollSpeedMultiplier` |
 | `systems/SpeedBoostSystem.ts` | Spawn intake, AABB collection, despawn, effect countdown, `engine.speedBoostRef` |
 | `utils/speed-boost-render.ts` | Viewport culling helpers |
-| `ui/SpeedBoostRenderer.tsx` | Fixed `MAX_SPEED_BOOSTS` memo slots; Reanimated blue rounded placeholders |
+| `ui/SpeedBoostRenderer.tsx` | Fixed `MAX_SPEED_BOOSTS` memo slots; Reanimated atlas sprite (~12 FPS loop from `speed-boost-sprite.json` / `speed-boost-sprite.png`) |
 | `ui/ActiveEffectDurationHud.tsx` | Top-center ⚡ speed + 🛡 shield duration bars (see **HUD**) |
 
 **GameConfig (speed boost):**
@@ -849,7 +869,7 @@ Pooled speed boost pickups and timed scroll multiplier — gameplay in **SpeedBo
 | `SPEED_BOOST_COLLISION_PADDING` | `4` | Inset on pickup AABB for collection |
 | `SPEED_BOOST_RENDER_MARGIN` | `64` | Culling padding around viewport for draw |
 
-**Spawn scheduling:** **SpawnManager** enqueues **`speed_boost`** on the same rotation tick as **coin** (piggyback attempt after coin; shares `SPAWN_INTERVAL ×` difficulty timing). Intake, collection, effect, and despawn are unchanged below.
+**Spawn scheduling:** **SpawnManager** enqueues **`speed_boost`** on its own `SPAWN_KIND_SEQUENCE` turn (independent of coin; shares `SPAWN_INTERVAL ×` difficulty timing). Intake, collection, effect, and despawn are unchanged below.
 
 **`engine.speedBoostRef`:** `speedBoosts[]`, `activeCount`, `nextSpeedBoostId`, `isSpeedBoostActive`, `remainingSpeedBoostMs`, `speedMultiplier` ( `1` when inactive).
 
@@ -867,7 +887,7 @@ Pooled speed boost pickups and timed scroll multiplier — gameplay in **SpeedBo
 2. Each frame, `engine.onFrame` updates shared values per fixed slot index (`speedBoostRef.speedBoosts[i]`).
 3. Screen rect: `speedBoostWorldToScreenRect` — same center-anchored math as collection in **SpeedBoostSystem**.
 4. Culled if outside viewport ± `SPEED_BOOST_RENDER_MARGIN` (`opacity` 0); inactive slots hidden.
-5. Placeholder: rounded square sized to `SPEED_BOOST_WORLD_SIZE` (32×32), blue fill + border.
+5. **Atlas animation:** `assets/assets/Thunder Animations/speed-boost-sprite.png` + `speed-boost-sprite.json` (TexturePacker frames sorted by numeric name; same clip-viewport strategy as **ShieldPickupRenderer**); ~12 FPS from `timeRef.elapsedMs`; contain-fit centered inside `SPEED_BOOST_WORLD_SIZE` (32×32 — gameplay geometry unchanged).
 
 **WorldSystem interaction:** Each fixed step, **WorldSystem** reads `difficultyRef.speedMultiplier` and `resolveScrollSpeedMultiplier(speedBoostRef)`, then scrolls by `(BASE_SCROLL_SPEED × difficulty × boost × fixedDeltaMs) / 1000`. **SpeedBoostSystem** runs later in the same frame (countdown and collection), so a pickup collected mid-frame applies boosted scroll on the **next** fixed step; expiry may apply boost for one extra scroll step on the frame duration hits zero.
 
@@ -885,7 +905,7 @@ No allocations during `fixedUpdate` in **SpeedBoostSystem**.
 
 ## HUD
 
-Read-only overlay for hearts, coins, distance, and active speed/shield duration bars — no gameplay mutations, no game over / pause chrome, no collection VFX or particles.
+Read-only overlay for hearts, score, distance, and active speed/shield duration bars — no gameplay mutations, no game over / pause chrome, no collection VFX or particles.
 
 | File | Role |
 |------|------|
@@ -897,17 +917,17 @@ Read-only overlay for hearts, coins, distance, and active speed/shield duration 
 
 **Data flow (each display frame):**
 
-1. **TimeSystem** advances `engine.timeRef.current.totalDistance` (world scroll / run distance).
-2. **HealthSystem** maintains `engine.healthRef.current.currentHealth` and `maxHealth`.
-3. **CoinSystem** increments `engine.coinRef.current.totalCoinsCollected` on collection.
-4. **Hud** subscribes once via `engine.onFrame` and copies those ref fields into shared values (`currentHealth`, `totalCoins`, `totalDistance`) — **no React state** for gameplay numbers.
-5. **HudHeart** toggles heart opacity from `currentHealth`; **HudNumberField** uses `useAnimatedProps` on a non-editable `TextInput` for coin count and distance (`m` suffix).
+1. **TimeSystem** advances `engine.timeRef.current.totalDistance` (world scroll / run distance) and awards passive distance score on `scoreRef` (+1 per `DISTANCE_METERS_PER_SCORE_POINT` meters; no GameplayFeedback).
+2. **HealthSystem** maintains `engine.healthRef.current.currentHealth` and applies obstacle score penalties.
+3. **CoinSystem** increments `engine.coinRef.current.totalCoinsCollected` and `engine.scoreRef.current.currentScore` on collection.
+4. **Hud** subscribes once via `engine.onFrame` and copies those ref fields into shared values (`currentHealth`, `currentScore`, `totalDistance`) — **no React state** for gameplay numbers.
+5. **HudHeart** toggles heart opacity from `currentHealth`; **HudNumberField** uses `useAnimatedProps` on a non-editable `TextInput` for score and distance (`m` suffix).
 6. **ActiveEffectDurationHud** mirrors `speedBoostRef` and `shieldRef` (`isSpeedBoostActive` / `remainingSpeedBoostMs`, `isShieldActive` / `remainingShieldMs`) into shared values; fill widths use **GameConfig** durations (no duplicate timers).
 
 **Layout:**
 
 - Safe area: `useSafeAreaInsets()` + `HUD_TOP_OFFSET` / `HUD_HORIZONTAL_INSET`.
-- Hearts, coins, distance: top-left cluster (`HUD_PAUSE_CLEARANCE` keeps metrics clear of **PauseButton**).
+- Hearts, score, distance: top-left cluster (`HUD_PAUSE_CLEARANCE` keeps metrics clear of **PauseButton**).
 - Active effects: top-center stacked **⚡ SPEED** and **🛡 SHIELD** labels + 160×10 px bars (each hidden when inactive).
 
 **Effect duration bars:**

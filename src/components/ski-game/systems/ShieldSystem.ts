@@ -16,6 +16,7 @@ import { aabbIntersectsWithPadding } from '../utils/collision';
 import { GAME_CONFIG } from '../utils/GameConfig';
 import {
   isSpawnRequestPastDespawn,
+  copySpawnRequestToWriteIndex,
   retainFailedSpawnRequest,
 } from '../utils/spawn-request-intake';
 import { resolveShieldActivationWorldY } from '../utils/coin-activation-world-y';
@@ -84,9 +85,7 @@ export class ShieldSystem implements GameSystem {
     for (let readIndex = 0; readIndex < pendingCount; readIndex += 1) {
       const request = requests[readIndex];
       if (request.kind !== 'shield') {
-        if (writeIndex !== readIndex) {
-          requests[writeIndex] = request;
-        }
+        copySpawnRequestToWriteIndex(requests, writeIndex, readIndex, request);
         writeIndex += 1;
         continue;
       }

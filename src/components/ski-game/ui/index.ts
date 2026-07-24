@@ -8,6 +8,7 @@ export { ActiveEffectDurationHud, SpeedBoostDurationHud } from './ActiveEffectDu
 export { ShieldBubbleRenderer } from './ShieldBubbleRenderer';
 export { ShieldPickupRenderer } from './ShieldPickupRenderer';
 export { CollisionBurstRenderer } from './CollisionBurstRenderer';
+export { GameplayFeedbackRenderer } from './GameplayFeedbackRenderer';
 export { ShieldShatterRenderer } from './ShieldShatterRenderer';
 export { SnowTrailRenderer } from './SnowTrailRenderer';
 export { Hud } from './Hud';

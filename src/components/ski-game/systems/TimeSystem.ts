@@ -2,6 +2,7 @@ import type { GameEngine } from '../engine/GameEngine';
 import { createInitialTimeState } from '../types/time-state';
 import type { GameSystem } from '../types';
 import { GAME_CONFIG } from '../utils/GameConfig';
+import { applyDistanceScoreProgress } from '../utils/score-consequences';
 
 export const TIME_SYSTEM_ID = 'time-system';
 
@@ -34,5 +35,7 @@ export class TimeSystem implements GameSystem {
 
     const distanceStep = (GAME_CONFIG.BASE_SCROLL_SPEED * fixedDeltaMs) / 1000;
     time.totalDistance += distanceStep;
+
+    applyDistanceScoreProgress(engine.scoreRef.current, time.totalDistance);
   }
 }

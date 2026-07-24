@@ -66,7 +66,7 @@ export const Hud = memo(function Hud() {
   const insets = useSafeAreaInsets();
 
   const currentHealth = useSharedValue<number>(GAME_CONFIG.PLAYER_MAX_HEALTH);
-  const totalCoins = useSharedValue<number>(0);
+  const currentScore = useSharedValue<number>(0);
   const totalDistance = useSharedValue<number>(0);
 
   const top = insets.top + HUD_TOP_OFFSET;
@@ -95,15 +95,15 @@ export const Hud = memo(function Hud() {
 
   useEffect(() => {
     currentHealth.value = engine.healthRef.current.currentHealth;
-    totalCoins.value = engine.coinRef.current.totalCoinsCollected;
+    currentScore.value = engine.scoreRef.current.currentScore;
     totalDistance.value = engine.timeRef.current.totalDistance;
 
     return engine.onFrame(() => {
       currentHealth.value = engine.healthRef.current.currentHealth;
-      totalCoins.value = engine.coinRef.current.totalCoinsCollected;
+      currentScore.value = engine.scoreRef.current.currentScore;
       totalDistance.value = engine.timeRef.current.totalDistance;
     });
-  }, [currentHealth, engine, totalCoins, totalDistance]);
+  }, [currentHealth, currentScore, engine, totalDistance]);
 
   return (
     <View style={hudStyles.root} pointerEvents="none">
@@ -116,11 +116,8 @@ export const Hud = memo(function Hud() {
         </View>
 
         <View style={hudStyles.metricBlock}>
-          <Text style={hudStyles.metricLabel}>COINS</Text>
-          <View style={hudStyles.row}>
-            <Text style={hudStyles.coinPrefix}>◎</Text>
-            <HudNumberField sharedValue={totalCoins} />
-          </View>
+          <Text style={hudStyles.metricLabel}>SCORE</Text>
+          <HudNumberField sharedValue={currentScore} />
         </View>
 
         <View style={hudStyles.metricBlock}>

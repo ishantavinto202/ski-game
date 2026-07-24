@@ -1,7 +1,7 @@
 export type HudMetricValues = {
   currentHealth: number;
   maxHealth: number;
-  totalCoinsCollected: number;
+  currentScore: number;
   totalDistance: number;
 };
 

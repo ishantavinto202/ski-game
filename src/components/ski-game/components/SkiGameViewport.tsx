@@ -16,6 +16,7 @@ import { PlayerRenderer } from '../ui/PlayerRenderer';
 import { ShieldBubbleRenderer } from '../ui/ShieldBubbleRenderer';
 import { ShieldPickupRenderer } from '../ui/ShieldPickupRenderer';
 import { CollisionBurstRenderer } from '../ui/CollisionBurstRenderer';
+import { GameplayFeedbackRenderer } from '../ui/GameplayFeedbackRenderer';
 import { ShieldShatterRenderer } from '../ui/ShieldShatterRenderer';
 import { SnowTrailRenderer } from '../ui/SnowTrailRenderer';
 import { TouchControls } from '../ui/TouchControls';
@@ -55,6 +56,7 @@ export const SkiGameViewport = memo(function SkiGameViewport() {
       {viewport ? <CollisionBurstRenderer viewport={viewport} /> : null}
       {viewport ? <ShieldShatterRenderer viewport={viewport} /> : null}
       {playerSnapshot ? <PlayerRenderer player={playerSnapshot} /> : null}
+      {viewport ? <GameplayFeedbackRenderer viewport={viewport} /> : null}
       {playerSnapshot ? <ShieldBubbleRenderer player={playerSnapshot} /> : null}
       <Hud />
       <TouchControls />

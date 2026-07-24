@@ -19,14 +19,37 @@ export function isSpawnRequestPastDespawn(
   return screenY > despawnScreenY;
 }
 
+/** Copy spawn row on compact so pending slots never alias the same object. */
+export function cloneSpawnRequest(request: SpawnRequest): SpawnRequest {
+  return {
+    id: request.id,
+    kind: request.kind,
+    worldX: request.worldX,
+    worldY: request.worldY,
+    laneIndex: request.laneIndex,
+    obstacleVariant: request.obstacleVariant,
+    active: request.active,
+  };
+}
+
+export function copySpawnRequestToWriteIndex(
+  requests: SpawnRequest[],
+  writeIndex: number,
+  readIndex: number,
+  request: SpawnRequest,
+): void {
+  if (writeIndex === readIndex) {
+    return;
+  }
+  requests[writeIndex] = cloneSpawnRequest(request);
+}
+
 export function retainFailedSpawnRequest(
   requests: SpawnRequest[],
   writeIndex: number,
   readIndex: number,
   request: SpawnRequest,
 ): number {
-  if (writeIndex !== readIndex) {
-    requests[writeIndex] = request;
-  }
+  copySpawnRequestToWriteIndex(requests, writeIndex, readIndex, request);
   return writeIndex + 1;
 }

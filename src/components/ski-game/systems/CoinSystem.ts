@@ -12,6 +12,7 @@ import { aabbIntersectsWithPadding } from '../utils/collision';
 import { GAME_CONFIG } from '../utils/GameConfig';
 import {
   isSpawnRequestPastDespawn,
+  copySpawnRequestToWriteIndex,
   retainFailedSpawnRequest,
 } from '../utils/spawn-request-intake';
 import {
@@ -29,6 +30,8 @@ import {
   unregisterCoinLifecycleDebug,
 } from '../utils/coin-active-lifecycle-debug';
 import { resolveCoinActivationWorldY } from '../utils/coin-activation-world-y';
+import { spawnGameplayFeedbackForCoinCollect } from '../effects/GameplayFeedback';
+import { COIN_COLLECT_SCORE, applyScoreDelta } from '../utils/score-consequences';
 import { worldYCenterToScreenY } from '../utils/world-coordinates';
 
 export const COIN_SYSTEM_ID = 'coin-system';
@@ -82,9 +85,7 @@ export class CoinSystem implements GameSystem {
     for (let readIndex = 0; readIndex < pendingCount; readIndex += 1) {
       const request = requests[readIndex];
       if (request.kind !== 'coin') {
-        if (writeIndex !== readIndex) {
-          requests[writeIndex] = request;
-        }
+        copySpawnRequestToWriteIndex(requests, writeIndex, readIndex, request);
         writeIndex += 1;
         continue;
       }
@@ -178,6 +179,8 @@ export class CoinSystem implements GameSystem {
       if (hit) {
         logCoinCollected(coin.id);
         unregisterCoinLifecycleDebug(index, 'collected', coin.id);
+        applyScoreDelta(engine.scoreRef.current, COIN_COLLECT_SCORE);
+        spawnGameplayFeedbackForCoinCollect(engine);
         collectCoin(coin, pool);
       }
     }

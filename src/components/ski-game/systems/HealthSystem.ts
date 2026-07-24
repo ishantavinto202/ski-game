@@ -1,7 +1,12 @@
 import type { GameEngine } from '../engine/GameEngine';
-import { createInitialHealthState, resetHealthState } from '../types/HealthTypes';
+import { resetHealthState } from '../types/HealthTypes';
 import type { GameSystem } from '../types';
 import { GAME_CONFIG } from '../utils/GameConfig';
+import {
+  spawnGameplayFeedbackForCoinCollect,
+  spawnGameplayFeedbackForConsequence,
+} from '../effects/GameplayFeedback';
+import { applyScoreDelta, resolveObstacleConsequence } from '../utils/score-consequences';
 
 export const HEALTH_SYSTEM_ID = 'health-system';
 
@@ -49,34 +54,40 @@ export class HealthSystem implements GameSystem {
       return;
     }
 
-    if (engine.shieldRef.current.isShieldActive) {
-      const obstacleId = collision.obstacleId;
-      if (obstacleId === health.lastDamagingObstacleId) {
-        return;
-      }
+    const obstacleId = collision.obstacleId;
+    if (obstacleId === health.lastDamagingObstacleId) {
+      return;
+    }
 
+    const consequence = resolveObstacleConsequence(collision.obstacleType);
+    if (!consequence) {
+      return;
+    }
+
+    if (engine.shieldRef.current.isShieldActive) {
       health.lastDamagingObstacleId = obstacleId;
       health.invulnerabilityRemainingMs = GAME_CONFIG.PLAYER_INVULNERABILITY_MS;
       health.isInvulnerable = true;
       return;
     }
 
-    if (health.currentHealth <= 0) {
-      return;
+    const willDamageHealth = consequence.healthDamage > 0 && health.currentHealth > 0;
+
+    applyScoreDelta(engine.scoreRef.current, consequence.scoreDelta);
+
+    if (willDamageHealth) {
+      const nextHealth = health.currentHealth - consequence.healthDamage;
+      health.currentHealth = nextHealth > 0 ? nextHealth : 0;
+      health.invulnerabilityRemainingMs = GAME_CONFIG.PLAYER_INVULNERABILITY_MS;
+      health.isInvulnerable = true;
     }
 
-    const obstacleId = collision.obstacleId;
-    if (obstacleId === health.lastDamagingObstacleId) {
-      return;
-    }
-
-    health.currentHealth -= 1;
-    if (health.currentHealth < 0) {
-      health.currentHealth = 0;
-    }
+    spawnGameplayFeedbackForConsequence(
+      engine,
+      consequence,
+      willDamageHealth ? consequence.healthDamage : 0,
+    );
 
     health.lastDamagingObstacleId = obstacleId;
-    health.invulnerabilityRemainingMs = GAME_CONFIG.PLAYER_INVULNERABILITY_MS;
-    health.isInvulnerable = true;
   }
 }

@@ -2,7 +2,7 @@ import type { GameEngine } from '../engine/GameEngine';
 import type { SpawnKind } from '../types/SpawnTypes';
 
 /** Temporary coin scheduling instrumentation — remove after debugging. */
-export const COIN_SCHEDULING_DEBUG_ENABLED = true;
+export const COIN_SCHEDULING_DEBUG_ENABLED = false;
 
 const POOL_LOG_INTERVAL_MS = 10_000;
 

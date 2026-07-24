@@ -132,6 +132,7 @@ export const GameOverOverlay = memo(function GameOverOverlay({
 }: GameOverOverlayProps) {
   const engine = useGameEngineContext();
   const flowStateIndex = useSharedValue(GAME_FLOW_STATE_INDEX.ready);
+  const currentScore = useSharedValue<number>(0);
   const totalDistance = useSharedValue<number>(0);
   const totalCoins = useSharedValue<number>(0);
 
@@ -144,17 +145,19 @@ export const GameOverOverlay = memo(function GameOverOverlay({
     const sync = () => {
       flowStateIndex.value = GAME_FLOW_STATE_INDEX[engine.gameStateRef.current.currentState];
       const summary = readGameOverSummaryFromRefs({
+        scoreRef: engine.scoreRef,
         timeRef: engine.timeRef,
         coinRef: engine.coinRef,
         healthRef: engine.healthRef,
       });
+      currentScore.value = summary.currentScore;
       totalDistance.value = summary.totalDistance;
       totalCoins.value = summary.totalCoinsCollected;
     };
 
     sync();
     return engine.onFrame(sync);
-  }, [engine, flowStateIndex, totalCoins, totalDistance]);
+  }, [currentScore, engine, flowStateIndex, totalCoins, totalDistance]);
 
   const containerStyle = useAnimatedStyle(() => ({
     display: flowStateIndex.value === GAME_FLOW_GAME_OVER ? 'flex' : 'none',
@@ -177,6 +180,10 @@ export const GameOverOverlay = memo(function GameOverOverlay({
       <View style={overlayStyles.scrim} pointerEvents="none" />
       <View style={overlayStyles.panel}>
         <Text style={overlayStyles.title}>GAME OVER</Text>
+        <View style={overlayStyles.statRow}>
+          <Text style={overlayStyles.statLabel}>Score</Text>
+          <GameOverStatField sharedValue={currentScore} />
+        </View>
         <View style={overlayStyles.statRow}>
           <Text style={overlayStyles.statLabel}>Distance</Text>
           <GameOverStatField sharedValue={totalDistance} suffix="m" />

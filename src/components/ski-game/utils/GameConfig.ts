@@ -96,6 +96,12 @@ export const GAME_CONFIG = {
   /** World Y bands scanned ahead from the pickup base Y (step = `SPAWN_PICKUP_WORLD_Y_RETRY_STEP`). */
   SPAWN_PICKUP_WORLD_Y_SEARCH_BANDS: 36,
   SPAWN_PICKUP_WORLD_Y_RETRY_STEP: 36,
+  /**
+   * Minimum |ΔworldY| between pickup centers (pending + active).
+   * ~2× pickup height / ~1.75× `SPAWN_PICKUP_WORLD_Y_RETRY_STEP` — avoids same-row coin/boost pairs
+   * without forcing a fixed offset pattern.
+   */
+  PICKUP_MIN_VERTICAL_SEPARATION: 64,
 
   /** Maximum pooled obstacles alive at once. */
   MAX_OBSTACLES: 64,

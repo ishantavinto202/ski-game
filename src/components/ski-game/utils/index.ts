@@ -41,6 +41,7 @@ export {
   findClearPickupSpawn,
   footprintsOverlap,
   isPickupAreaOccupied,
+  isPickupVerticalSeparationBlocked,
   isSpawnAreaOccupied,
   type PickupSpawnKind,
   type SpawnFootprint,
