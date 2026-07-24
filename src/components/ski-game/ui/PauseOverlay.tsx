@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect } from 'react';
+import { memo, useCallback, useEffect, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import Animated, { useAnimatedStyle, useSharedValue } from 'react-native-reanimated';
 
@@ -13,6 +13,8 @@ import {
   PAUSE_PLACEHOLDER_QUIT,
   type PauseOverlayProps,
 } from './PauseTypes';
+import { ScoringGuideInfoButton } from './ScoringGuideInfoButton';
+import { ScoringGuideOverlay } from './ScoringGuideOverlay';
 
 const overlayStyles = StyleSheet.create({
   root: {
@@ -26,9 +28,11 @@ const overlayStyles = StyleSheet.create({
     backgroundColor: `rgba(15, 23, 42, ${PAUSE_OVERLAY_SCRIM_OPACITY})`,
   },
   panel: {
+    position: 'relative',
     minWidth: 220,
+    paddingTop: 28,
+    paddingBottom: 24,
     paddingHorizontal: 28,
-    paddingVertical: 24,
     borderRadius: 12,
     borderWidth: 2,
     borderColor: SKI_GAME_COLORS.playerPlaceholderBorder,
@@ -82,6 +86,14 @@ export const PauseOverlay = memo(function PauseOverlay({ onQuitPress = PAUSE_PLA
     onQuitPress();
   }, [onQuitPress]);
 
+  const [isScoringGuideOpen, setIsScoringGuideOpen] = useState(false);
+  const handleOpenScoringGuide = useCallback(() => {
+    setIsScoringGuideOpen(true);
+  }, []);
+  const handleCloseScoringGuide = useCallback(() => {
+    setIsScoringGuideOpen(false);
+  }, []);
+
   const containerStyle = useAnimatedStyle(() => ({
     display: flowStateIndex.value === PAUSE_FLOW_PAUSED ? 'flex' : 'none',
   }));
@@ -90,6 +102,7 @@ export const PauseOverlay = memo(function PauseOverlay({ onQuitPress = PAUSE_PLA
     <Animated.View style={[overlayStyles.root, containerStyle]} pointerEvents="auto">
       <View style={overlayStyles.scrim} pointerEvents="none" />
       <View style={overlayStyles.panel}>
+        <ScoringGuideInfoButton onPress={handleOpenScoringGuide} />
         <Text style={overlayStyles.title}>PAUSED</Text>
         <Pressable accessibilityRole="button" onPress={handleResumePress} style={overlayStyles.action}>
           <Text style={overlayStyles.actionLabel}>Resume</Text>
@@ -102,6 +115,7 @@ export const PauseOverlay = memo(function PauseOverlay({ onQuitPress = PAUSE_PLA
           <Text style={overlayStyles.actionLabel}>Quit</Text>
         </Pressable>
       </View>
+      {isScoringGuideOpen ? <ScoringGuideOverlay onClose={handleCloseScoringGuide} /> : null}
     </Animated.View>
   );
 });
