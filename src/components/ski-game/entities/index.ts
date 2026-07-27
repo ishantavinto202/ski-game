@@ -52,3 +52,10 @@ export {
   deactivateObstacle,
   pickWeightedObstacleVariant,
 } from './Obstacle';
+export {
+  createSnowSurfacePoolState,
+  activateSnowSurface,
+  deactivateSnowSurface,
+  snowSurfaceWorldToScreenRect,
+  resetSnowSurfacePoolInPlace,
+} from './SnowSurface';

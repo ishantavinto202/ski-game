@@ -13,6 +13,12 @@ export type {
   ObstaclePoolState,
   ObstacleDimensions,
 } from './ObstacleTypes';
+export type { DecorativeTreeRecord, DecorativeTreePoolState } from './DecorativeTreeTypes';
+export type {
+  SnowSurfaceRecord,
+  SnowSurfacePoolState,
+  SnowSurfaceTypeIndex,
+} from './SnowSurfaceTypes';
 export type { CollisionState } from './CollisionTypes';
 export type { HealthState } from './HealthTypes';
 export type { ChaserState } from './ChaserTypes';

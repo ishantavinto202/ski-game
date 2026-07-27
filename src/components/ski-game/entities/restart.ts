@@ -23,8 +23,9 @@ import { resetCoinSchedulingDebugCounters } from '../utils/coin-scheduling-debug
 import { resetCoinActiveLifecycleDebug } from '../utils/coin-active-lifecycle-debug';
 import { GAME_CONFIG } from '../utils/GameConfig';
 import { resetDecorativeTreePoolInPlace } from './DecorativeTree';
+import { resetSnowSurfacePoolInPlace } from './SnowSurface';
 import { getGameplayFeedbackPool, resetGameplayFeedbackPool } from '../effects/GameplayFeedback';
-import { getSkiTrackState, resetSkiTrackState } from '../effects/SkiTrack';
+import { resetAllSkiTrackStates } from '../effects/SkiTrack';
 import { resetChaserState, snapChaserBehindPlayer } from './Chaser';
 import { resetChaserPathState, resolvePlayerWorldY } from './ChaserPath';
 import { clearGameOverCacheState } from '../ui/GameOverTypes';
@@ -219,9 +220,10 @@ export function resetGame(engine: GameEngine): void {
   if (GAME_CONFIG.DECORATIVE_TREES_ENABLED) {
     resetDecorativeTreePoolInPlace(engine.decorativeTreeRef.current);
   }
+  resetSnowSurfacePoolInPlace(engine.snowSurfaceRef.current);
   resetGameOverCache(engine);
   resetGameplayFeedback(engine);
-  resetSkiTrackState(getSkiTrackState(engine));
+  resetAllSkiTrackStates(engine);
   resetChaserVisual(engine);
 }
 

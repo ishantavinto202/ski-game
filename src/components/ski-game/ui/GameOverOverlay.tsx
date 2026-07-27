@@ -19,8 +19,10 @@ import {
   readGameOverSummaryFromRefs,
   type GameOverOverlayProps,
 } from './GameOverTypes';
-import { ScoringGuideInfoButton } from './ScoringGuideInfoButton';
 import { ScoringGuideOverlay } from './ScoringGuideOverlay';
+import { MENU_MODAL_HORIZONTAL_PADDING } from './ScoringGuideTypes';
+
+const MENU_BUTTON_GAP = 14;
 
 const AnimatedTextInput = Animated.createAnimatedComponent(TextInput);
 
@@ -35,11 +37,10 @@ const overlayStyles = StyleSheet.create({
     backgroundColor: 'rgba(15, 23, 42, 0.42)',
   },
   panel: {
-    position: 'relative',
     minWidth: 260,
-    paddingTop: 28,
+    paddingTop: 24,
     paddingBottom: 24,
-    paddingHorizontal: 28,
+    paddingHorizontal: MENU_MODAL_HORIZONTAL_PADDING,
     borderRadius: 12,
     borderWidth: 2,
     borderColor: SKI_GAME_COLORS.playerPlaceholderBorder,
@@ -48,11 +49,13 @@ const overlayStyles = StyleSheet.create({
     gap: 12,
   },
   title: {
+    marginBottom: 4,
     fontSize: 24,
     fontWeight: '800',
     letterSpacing: 1.2,
     color: SKI_GAME_COLORS.playerPlaceholderBorder,
-    marginBottom: 4,
+    textAlign: 'center',
+    alignSelf: 'center',
   },
   statRow: {
     flexDirection: 'row',
@@ -73,11 +76,11 @@ const overlayStyles = StyleSheet.create({
     margin: 0,
     minWidth: 80,
   },
-  actions: {
+  buttonStack: {
     marginTop: 8,
-    gap: 10,
     width: '100%',
-    alignItems: 'center',
+    gap: MENU_BUTTON_GAP,
+    alignItems: 'stretch',
   },
   action: {
     minWidth: 180,
@@ -191,7 +194,6 @@ export const GameOverOverlay = memo(function GameOverOverlay({
     <Animated.View style={[rootStyle, containerStyle]} pointerEvents="auto">
       <View style={overlayStyles.scrim} pointerEvents="none" />
       <View style={overlayStyles.panel}>
-        <ScoringGuideInfoButton onPress={handleOpenScoringGuide} />
         <Text style={overlayStyles.title}>GAME OVER</Text>
         <View style={overlayStyles.statRow}>
           <Text style={overlayStyles.statLabel}>Score</Text>
@@ -205,9 +207,16 @@ export const GameOverOverlay = memo(function GameOverOverlay({
           <Text style={overlayStyles.statLabel}>Coins</Text>
           <GameOverStatField sharedValue={totalCoins} />
         </View>
-        <View style={overlayStyles.actions}>
+        <View style={overlayStyles.buttonStack}>
           <Pressable accessibilityRole="button" onPress={handlePlayAgainPress} style={overlayStyles.action}>
             <Text style={overlayStyles.actionLabel}>Play Again</Text>
+          </Pressable>
+          <Pressable
+            accessibilityRole="button"
+            onPress={handleOpenScoringGuide}
+            style={overlayStyles.action}
+          >
+            <Text style={overlayStyles.actionLabel}>Scoring Guide</Text>
           </Pressable>
           <Pressable
             accessibilityRole="button"

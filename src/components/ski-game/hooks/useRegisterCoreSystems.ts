@@ -16,6 +16,7 @@ import { HealthSystem } from '../systems/HealthSystem';
 import { GameOverSystem } from '../systems/GameOverSystem';
 import { ObstacleSystem } from '../systems/ObstacleSystem';
 import { DecorativeTreeSystem } from '../systems/DecorativeTreeSystem';
+import { SnowSurfaceSystem } from '../systems/SnowSurfaceSystem';
 import { SpawnManager } from '../managers/SpawnManager';
 import { GameStateSystem } from '../systems/GameStateSystem';
 import { DifficultySystem } from '../systems/DifficultySystem';
@@ -40,9 +41,10 @@ function createCoreSystems(): GameSystem[] {
     new MovementSystem(),
     new PlayerFeelSystem(),
     new CameraSystem(),
-    new SkiTrackSystem(),
     new SpawnManager(),
     new ObstacleSystem(),
+    // After ObstacleSystem so placement/cull see current obstacle visuals.
+    new SnowSurfaceSystem(),
   ];
 
   if (GAME_CONFIG.DECORATIVE_TREES_ENABLED) {
@@ -57,6 +59,8 @@ function createCoreSystems(): GameSystem[] {
     new ShieldSystem(),
     new SpeedBoostSystem(),
     new ChaserSystem(),
+    // After ChaserSystem so chaser track samples the same-step chaser X/Y.
+    new SkiTrackSystem(),
   );
 
   return systems;

@@ -275,7 +275,10 @@ Pause control and overlay — reads `gameStateRef` only; transitions go through 
 |------|------|
 | `ui/PauseTypes.ts` | Flow index constants, overlay props, placeholder quit handler |
 | `ui/PauseButton.tsx` | Top-right control while `playing` → `requestPauseGame` |
-| `ui/PauseOverlay.tsx` | Semi-transparent scrim + panel while `paused`; Resume / Quit (placeholder) |
+| `ui/PauseOverlay.tsx` | Semi-transparent scrim + panel while `paused`; Resume → Scoring Guide → Quit |
+| `ui/ScoringGuideOverlay.tsx` | Floating snow/navy modal (matches Pause / Game Over); scrollable collectibles + obstacles guide |
+| `ui/ScoringGuideRow.tsx` | Compact guide rows with real asset thumbnails |
+| `ui/scoring-guide-data.ts` | Config-driven guide copy/effects from `GAME_CONFIG` / `score-consequences` (UI presentation only) |
 
 **Pause button**
 
@@ -289,11 +292,12 @@ Pause control and overlay — reads `gameStateRef` only; transitions go through 
 - Gameplay + **Hud** stay rendered underneath; world is frozen because **GameLoop** skips gameplay fixed steps while not `playing`.
 - **Resume** → `requestResumeGame(engine)`.
 - **Quit** → optional `onQuitPress` prop (defaults to `PAUSE_PLACEHOLDER_QUIT`, no navigation yet).
+- **Scoring Guide** action opens **ScoringGuideOverlay** above the pause panel; closing the guide returns to pause (`currentState` stays `paused`).
 - Blocks touches above **TouchControls** while shown (`zIndex` above steer zones).
 
 **Viewport layer order (bottom → top):**
 
-1. **WorldRenderer** → **SkiTrackRenderer** → **ObstacleRenderer** → **CoinRenderer** → **SpeedBoostRenderer** → **ShieldPickupRenderer** → **CollisionBurstRenderer** → **ShieldShatterRenderer** → **ChaserRenderer** → **ShieldBubbleRenderer** → **PlayerRenderer**
+1. **WorldRenderer** → **SnowSurfaceRenderer** → **SkiTrackRenderer** → **ChaserRenderer** → **ShieldBubbleRenderer** → **PlayerRenderer** → **ObstacleRenderer** → **CoinRenderer** → **SpeedBoostRenderer** → **ShieldPickupRenderer** → **CollisionBurstRenderer** → **ShieldShatterRenderer**
 2. **Hud**
 3. **TouchControls**
 4. **PauseButton** (playing only)
@@ -310,31 +314,36 @@ Detects zero health during play and shows a summary overlay.
 |------|------|
 | `systems/GameOverSystem.ts` | If `playing` and `healthRef.currentHealth <= 0` → cache summary on `gameOverCacheRef`, then `requestGameOver(engine)` |
 | `ui/GameOverTypes.ts` | Overlay props, summary/cache helpers, quit placeholder |
-| `ui/GameOverOverlay.tsx` | Visible when `game_over`; stats via Reanimated + `engine.onFrame` |
+| `ui/GameOverOverlay.tsx` | Visible when `game_over`; stats via Reanimated + `engine.onFrame`; Play Again → Scoring Guide → Quit |
 
 **Gameplay rule:** **GameOverSystem** never assigns `gameStateRef.currentState`; only **GameStateSystem** applies `game_over` from `pendingTransition`.
 
-**Overlay (read-only refs):** `scoreRef`, `timeRef`, `coinRef`, `healthRef` via `readGameOverSummaryFromRefs`. **Play Again** default → `playAgain(engine)` (**Restart**). **Quit** → optional prop (placeholder no-op).
+**Overlay (read-only refs):** `scoreRef`, `timeRef`, `coinRef`, `healthRef` via `readGameOverSummaryFromRefs`. **Play Again** default → `playAgain(engine)` (**Restart**). **Scoring Guide** opens **ScoringGuideOverlay**. **Quit** → optional prop (placeholder no-op).
+
+## Scoring Guide
+
+Informational overlay only — no gameplay / scoring mechanic changes. Snow/navy panel language matches Pause / Game Over (not a separate dark theme). Values come from `COIN_COLLECT_SCORE`, `OBSTACLE_CONSEQUENCES`, `SHIELD_DURATION_MS`, `SPEED_BOOST_*`. Collectible/booster thumbnails use `assets/voxel assets/` (Coin, Sheld Guide, Blue_Thunder_Asset) — guide-only; in-game pickup atlases are unchanged. Collectible rows use compact benefit chips (`+N SCORE`, `1 HIT` / `N SEC`, `N× SPEED` / `N SEC`) in the same chip language as obstacle penalty chips, with green / shield-teal / boost-blue tones. Obstacle thumbnails reuse `obstacle-assets` metadata for object-centered previews (`GuideAssetLayout` is UI-only). Obstacle rows show compact red penalty chips (`−N SCORE`, optional `♥ −N`) instead of loose effect text.
 
 **`engine.gameOverCacheRef`:** snapshot written at game over; cleared by `resetGame`.
 
 **Full viewport layer order (bottom → top):**
 
 1. **WorldRenderer**
-2. **SkiTrackRenderer** (carved ski tracks on snow)
-3. **ObstacleRenderer**
-4. **CoinRenderer**
-5. **SpeedBoostRenderer**
-6. **ShieldPickupRenderer**
-7. **CollisionBurstRenderer** / **ShieldShatterRenderer** (impact VFX; behind player)
-8. **ChaserRenderer** (chase-pressure follower; behind shield bubble / player)
-9. **ShieldBubbleRenderer** then **PlayerRenderer** (when player mounted; bubble behind skier so the player sits inside the bubble art)
-10. **GameplayFeedbackRenderer** (floating score/heart text)
-11. **Hud**
-12. **TouchControls**
-13. **PauseButton**
-14. **PauseOverlay**
-15. **GameOverOverlay**
+2. **SnowSurfaceRenderer** (sparse snow imperfections)
+3. **SkiTrackRenderer** (carved ski tracks on snow)
+4. **ChaserRenderer** (chase-pressure follower; behind shield bubble / player)
+5. **ShieldBubbleRenderer** then **PlayerRenderer** (when player mounted; bubble behind skier so the player sits inside the bubble art)
+6. **ObstacleRenderer** (above player/chaser so skiers pass visually behind trees/rocks/cabins)
+7. **CoinRenderer**
+8. **SpeedBoostRenderer**
+9. **ShieldPickupRenderer**
+10. **CollisionBurstRenderer** / **ShieldShatterRenderer** (impact VFX)
+11. **GameplayFeedbackRenderer** (floating score/heart text)
+12. **Hud**
+13. **TouchControls**
+14. **PauseButton**
+15. **PauseOverlay**
+16. **GameOverOverlay**
 
 While `game_over`, simulation fixed steps stop (same as pause); `notifyFrame` keeps the last frame visible under the overlay.
 
@@ -386,9 +395,35 @@ Simulation state lives in engine refs. React reads layout once; scrolling update
 
 **GameConfig:** `BASE_SCROLL_SPEED`, `FIXED_TIMESTEP`, `DIFFICULTY_RAMP_DURATION_MS`, `MAX_DIFFICULTY_SPEED_MULTIPLIER`, `MIN_SPAWN_INTERVAL_MULTIPLIER`, plus portrait tuning (`REFERENCE_VIEWPORT_*`, `LOOK_AHEAD_VIEWPORT_HEIGHT_RATIO`, `PLAYER_LOOKAHEAD_RATIO`, steer/obstacle ratios — see **Portrait orientation**).
 
-**Registration order:** **GameStateSystem** → `TimeSystem` → **DifficultySystem** → `WorldSystem` → `InputSystem` → `PlayerSystem` → `MovementSystem` → `PlayerFeelSystem` → `CameraSystem` → **SpawnManager** → **ObstacleSystem** → **CollisionSystem** → **HealthSystem** → **GameOverSystem** → **CoinSystem** → **ShieldSystem** → **SpeedBoostSystem** → **ChaserSystem** (gameplay systems run in `runFixedUpdate` when `playing`).
+**Registration order:** **GameStateSystem** → `TimeSystem` → **DifficultySystem** → `WorldSystem` → `InputSystem` → `PlayerSystem` → `MovementSystem` → `PlayerFeelSystem` → `CameraSystem` → **SpawnManager** → **ObstacleSystem** → **SnowSurfaceSystem** → **CollisionSystem** → **HealthSystem** → **GameOverSystem** → **CoinSystem** → **ShieldSystem** → **SpeedBoostSystem** → **ChaserSystem** → **SkiTrackSystem** (gameplay systems run in `runFixedUpdate` when `playing`).
 
 **Vertical scroll:** **WorldSystem** drives `worldRef.scrollOffsetY` using difficulty and optional speed boost (see **Speed boost**). **SpawnManager** uses `difficultyRef.spawnIntervalMultiplier` for pickup timing only; obstacle density is lookahead-driven (see **Lookahead population**). **TimeSystem** distance still uses base speed only. Look-ahead ratios and spawn helpers are unchanged.
+
+## Snow surface details (visual)
+
+Sparse procedural snow imperfections on top of the base snow strip — **presentation only**; no collision, spawn patterns, or gameplay coupling.
+
+| File | Role |
+|------|------|
+| `utils/snow-surface-assets.ts` | Static `require()` for six transparent PNGs + base display sizes |
+| `types/SnowSurfaceTypes.ts` | Fixed pool record + fill cursor / RNG state |
+| `entities/SnowSurface.ts` | Pool create / activate / deactivate / reset + world→screen |
+| `systems/SnowSurfaceSystem.ts` | Sparse lookahead fill + despawn below viewport |
+| `ui/SnowSurfaceRenderer.tsx` | Fixed `MAX_SNOW_SURFACE_DETAILS` slots; Reanimated images (no flip/rotate) |
+
+**Assets** (`assets/bg asset/`): `Snow Depression .png` (space before `.png`), `Snow Depression Small.png`, `Snow Dimples.png`, `Snow Ridge Short.png`, `Snow Ridge.png`. **`Snow Mound.png` is not used** (too obstacle-like). Lighting baked for east/right sun — never mirrored.
+
+**Behavior:**
+
+1. Fixed pool of **`MAX_SNOW_SURFACE_DETAILS` (24)**; recycle slots when past the bottom margin.
+2. Weighted spawn: large depression **3**, small depression **28**, dimples **30**, short ridge **27**, long ridge **12** (sum 100).
+3. Per-asset scale (large depression **0.60–0.72**, long ridge **0.70–0.90**, others ~**0.70–1.00**); global opacity **`0.72`**.
+4. Irregular vertical spacing **`70–150`** px (no nearby-pair clusters); uniform random X across the playable width.
+5. Cosmetic obstacle exclusion: placement padding **`24`**, runtime cull padding **`12`**, up to **`6`** X retries; skip activate if none clear.
+6. Layer: **above WorldRenderer**, **below SkiTrackRenderer** / characters / obstacles.
+7. **`resetSnowSurfacePoolInPlace`** on Play Again / restart.
+
+**GameConfig (snow surface):** `MAX_SNOW_SURFACE_DETAILS`, `SNOW_SURFACE_OPACITY`, `SNOW_SURFACE_SCALE_*`, `SNOW_SURFACE_PLACEMENT_OBSTACLE_PADDING`, `SNOW_SURFACE_RUNTIME_OBSTACLE_PADDING`, `SNOW_SURFACE_MAX_PLACEMENT_ATTEMPTS`, `SNOW_SURFACE_SPACING_*`, `SNOW_SURFACE_HORIZONTAL_PADDING`, `SNOW_SURFACE_INITIAL_LEAD`, `SNOW_SURFACE_LOOKAHEAD`, `SNOW_SURFACE_DESPAWN_MARGIN`, `SNOW_SURFACE_RENDER_MARGIN`.
 
 ## Difficulty
 
@@ -703,7 +738,7 @@ All six gameplay obstacle variants now use final PNG artwork — **no obstacle p
 
 **Rendering flow:**
 
-1. **SkiGameViewport** layer order: **WorldRenderer** → **SkiTrackRenderer** → **ObstacleRenderer** → **CoinRenderer** → **SpeedBoostRenderer** → **ShieldPickupRenderer** → **CollisionBurstRenderer** → **ShieldShatterRenderer** → **ChaserRenderer** → **ShieldBubbleRenderer** → **PlayerRenderer** → **GameplayFeedbackRenderer** → **Hud** → **TouchControls** → **PauseButton** → **PauseOverlay** → **GameOverOverlay**.
+1. **SkiGameViewport** layer order: **WorldRenderer** → **SnowSurfaceRenderer** → **SkiTrackRenderer** → **ChaserRenderer** → **ShieldBubbleRenderer** → **PlayerRenderer** → **ObstacleRenderer** → **CoinRenderer** → **SpeedBoostRenderer** → **ShieldPickupRenderer** → **CollisionBurstRenderer** → **ShieldShatterRenderer** → **GameplayFeedbackRenderer** → **Hud** → **TouchControls** → **PauseButton** → **PauseOverlay** → **GameOverOverlay**.
 2. Each frame, `engine.onFrame` updates shared values per fixed slot index (`obstacleRef.obstacles[i]`).
 3. Screen rect: center-anchored world position minus `worldRef.scrollOffsetY` and `cameraRef.offsetX`.
 4. Culled if outside viewport ± `OBSTACLE_RENDER_MARGIN` (`opacity` 0); inactive slots hidden.
@@ -815,7 +850,7 @@ Health-driven vertical follower behind the skier — **not** a second simulated 
 | `entities/Chaser.ts` | `resolveChaserHealthTargetGap`, `resolveChaserFinalTargetGap`, `snapChaserBehindPlayer` |
 | `entities/ChaserAvoidance.ts` | Local visual obstacle steering (allocation-free scan) |
 | `systems/ChaserSystem.ts` | Gap + horizontal smoothing; Speed Boost escape; avoidance integration |
-| `ui/ChaserRenderer.tsx` | Placeholder character; Reanimated `onFrame` sync from `chaserRef` |
+| `ui/ChaserRenderer.tsx` | Recolored skier atlas (`texture_2.png`); shares player atlas frame geometry; Reanimated `onFrame` sync from `chaserRef` |
 
 **`engine.chaserRef` fields:** `currentGap`, `targetGap`, screen `x` / `y`, `avoidObstacleId`, `avoidDirection`, `lastAvoidDirection`, `path` (fixed-capacity world-space breadcrumb ring buffer).
 
@@ -899,30 +934,31 @@ No allocations during `fixedUpdate` in **CoinSystem**.
 
 ## Ski tracks (visual)
 
-Dual continuous ski-carve tracks left in world space — **presentation only**; no gameplay systems changes.
+Dual continuous ski-carve tracks left in world space for **player and chaser** — **presentation only**; no gameplay systems changes. Same style/config for both.
 
 | File | Role |
 |------|------|
 | `types/SkiTrackTypes.ts` | Fixed ring-buffer point + segment layout types |
-| `effects/SkiTrack.ts` | World-space path sampling, segment layout rebuild, reset helpers |
-| `systems/SkiTrackSystem.ts` | Records player feet world positions on fixed steps |
-| `ui/SkiTrackRenderer.tsx` | Fixed segment slots; two parallel Reanimated capsule strokes per segment |
+| `effects/SkiTrack.ts` | Shared sampling + layout rebuild; separate fixed buffers for player and chaser |
+| `systems/SkiTrackSystem.ts` | Records feet world positions on fixed steps (after **ChaserSystem**) |
+| `ui/SkiTrackRenderer.tsx` | Two track layers (player + chaser); fixed segment slots; dual Reanimated capsule strokes |
 
 **Replaced:** bubble/dot **`SnowTrail`** particle pool (`effects/SnowTrail.ts`, `ui/SnowTrailRenderer.tsx`).
 
 **Behavior:**
 
-1. **SkiTrackSystem** samples player feet into a preallocated ring buffer every **`SKI_TRACK_SAMPLE_DISTANCE`** world px while `playing`.
+1. **SkiTrackSystem** samples player and chaser feet into independent preallocated ring buffers every **`SKI_TRACK_SAMPLE_DISTANCE`** world px while `playing`.
 2. Points are stored in **world space** (`worldX = screenX + cameraOffsetX`, `worldY = scrollOffsetY − feetScreenY`) so tracks scroll naturally with the mountain.
-3. **SkiTrackRenderer** rebuilds up to **`SKI_TRACK_MAX_POINTS − 1`** elongated capsule segments per frame (overlap **`SKI_TRACK_SEGMENT_OVERLAP`**) with perpendicular **`SKI_TRACK_SEPARATION`** for left/right skis.
-4. Opacity fades from **`SKI_TRACK_OPACITY_FAR`** (oldest) → **`SKI_TRACK_OPACITY`** (near player). Oldest points prune below the viewport.
-5. Layer: **above WorldRenderer**, **below obstacles/pickups/player**.
+3. **SkiTrackRenderer** rebuilds up to **`SKI_TRACK_MAX_POINTS − 1`** elongated capsule segments per owner per frame (overlap **`SKI_TRACK_SEGMENT_OVERLAP`**) with perpendicular **`SKI_TRACK_SEPARATION`** for left/right skis.
+4. Opacity fades from **`SKI_TRACK_OPACITY_FAR`** (oldest) → **`SKI_TRACK_OPACITY`** (near skier). Oldest points prune below the viewport.
+5. Layer: **above SnowSurfaceRenderer** / **WorldRenderer**, **below chaser/player/obstacles/pickups** (both trails share this layer).
+6. Restart / Play Again clears both track buffers via **`resetAllSkiTrackStates`**.
 
 **GameConfig (ski tracks):**
 
 | Key | Default | Meaning |
 |-----|---------|---------|
-| `SKI_TRACK_MAX_POINTS` | `48` | Ring-buffer path history |
+| `SKI_TRACK_MAX_POINTS` | `48` | Ring-buffer path history (per owner) |
 | `SKI_TRACK_SAMPLE_DISTANCE` | `6` | Min world px between samples |
 | `SKI_TRACK_WIDTH` | `4` | Stroke width (px) |
 | `SKI_TRACK_SEPARATION` | `12` | Distance between left/right tracks |
@@ -1102,12 +1138,14 @@ Read-only overlay for hearts, score, distance, and active speed/shield duration 
 **Viewport layer order (bottom → top):**
 
 1. **WorldRenderer**
-2. **ObstacleRenderer**
-3. **CoinRenderer**
-4. **PlayerRenderer**
-5. **Hud**
-6. **TouchControls**
-7. **PauseButton** / **PauseOverlay** / **GameOverOverlay** (see **Pause**, **Game over**)
+2. **SnowSurfaceRenderer**
+3. **SkiTrackRenderer**
+4. **ChaserRenderer** / **ShieldBubbleRenderer** / **PlayerRenderer**
+5. **ObstacleRenderer** (above player/chaser)
+6. **CoinRenderer**
+7. **Hud**
+8. **TouchControls**
+9. **PauseButton** / **PauseOverlay** / **GameOverOverlay** (see **Pause**, **Game over**)
 
 `pointerEvents="none"` on the HUD root so touches pass through to **TouchControls** (unless **PauseOverlay** is active).
 
@@ -1119,7 +1157,7 @@ Horizontal player motion only; vertical progress stays on **WorldSystem** scroll
 |------|------|
 | `systems/MovementSystem.ts` | Reads `inputRef`, updates `movementRef.velocityX` and `playerRef.current.x` each fixed step |
 | `types/movement-state.ts` | `MovementState` (`velocityX`) stored on `engine.movementRef` |
-| `ui/PlayerRenderer.tsx` | Syncs `left`, steer **lean** (`rotate`), and damage **blink** (`opacity` square wave from `healthRef` invulnerability) via Reanimated + `engine.onFrame` (no React state) |
+| `ui/PlayerRenderer.tsx` | Syncs `left`, steer **lean** (`rotate`), skier **sprite frame**, and damage **blink** (`opacity` square wave from `healthRef` invulnerability) via Reanimated + `engine.onFrame` (no React state) |
 
 **GameConfig (movement):**
 
@@ -1176,15 +1214,21 @@ The player is split across **data** (`entities/Player.ts`), **logic** (`systems/
 |------|------|
 | `entities/Player.ts` | `Player` model, `PlayerSnapshot`, and `createPlayerForViewport()` |
 | `systems/PlayerSystem.ts` | Spawns one player when the viewport is known; stores `Player` on `engine.playerRef` (position X updated by **MovementSystem**) |
-| `ui/PlayerRenderer.tsx` | Memoized textureless placeholder sized by `PLAYER_WIDTH` × `PLAYER_HEIGHT` |
+| `ui/PlayerRenderer.tsx` | Animated skier atlas (`assets/character sprite/`); lean + damage blink via Reanimated; gameplay AABB unchanged |
+| `utils/player-sprite.ts` | Shared skier atlas frame tables (`texture.json`); `PLAYER_ATLAS_TEXTURE` + `CHASER_ATLAS_TEXTURE` (`texture_2.png`) |
 | `utils/GameConfig.ts` | Player sizing/spawn, simulation step, portrait reference & layout ratios |
 
 **GameConfig (player):**
 
 | Key | Default | Meaning |
 |-----|---------|---------|
-| `PLAYER_WIDTH` | `44` | Placeholder width (px) |
-| `PLAYER_HEIGHT` | `64` | Placeholder height (px) |
+| `PLAYER_WIDTH` | `44` | Gameplay / collision width (px) |
+| `PLAYER_HEIGHT` | `64` | Gameplay / collision height (px) |
+| `PLAYER_VISUAL_WIDTH` | `71` | Skier sprite display width (keeps 304∶273 aspect) |
+| `PLAYER_VISUAL_HEIGHT` | `64` | Skier sprite display height |
+| `PLAYER_VISUAL_OFFSET_X` / `_Y` | `0` | Render-only center offsets |
+| `PLAYER_SPRITE_ANIMATION_FPS` | `12` | Atlas frame rate (driven by `timeRef.elapsedMs`) |
+| `DEBUG_PLAYER_HITBOX` | `false` | Optional translucent gameplay AABB overlay |
 | `PLAYER_START_X` | `0.5` | Normalized horizontal center (0–1) on the viewport |
 | `PLAYER_START_Y` | `0.82` | Normalized vertical center (0–1); ~82% down |
 | `PLAYER_LOOKAHEAD_RATIO` | `0.18` | Normalized lower-band / layout tuning below player anchor |
@@ -1201,7 +1245,7 @@ The player is split across **data** (`entities/Player.ts`), **logic** (`systems/
 4. **useGameViewport** syncs **PlayerSnapshot** after `onLayout` + **PlayerSystem** spawn; `isSimulationReady = viewport && playerSnapshot`.
 5. **SkiGameViewport** renders gameplay entities only when viewport/player preconditions are met (**ChaserRenderer** / **PlayerRenderer** require `playerSnapshot`; pooled renderers start at `opacity = 0`).
 6. **MovementSystem** updates horizontal position; **PlayerFeelSystem** updates lean from velocity.
-7. **PlayerRenderer** mirrors `playerRef.current.x` and `playerFeelRef.current.leanAngle` without `useState`.
+7. **PlayerRenderer** mirrors `playerRef.current.x`, `playerFeelRef.current.leanAngle`, and skier atlas frame from `timeRef.elapsedMs` (freezes when not `playing`) without `useState`.
 8. No camera motion, collision, or per-frame React updates on gameplay state.
 
 ## Adding a system (future)
@@ -1221,7 +1265,7 @@ The root route `app/index.tsx` renders **SkiGameScreen** fullscreen (Stack root,
 
 ## Performance conventions
 
-- **SkiGameScreen**, **SkiGameRoot**, **SkiGameViewport**, **SkiGameBackground**, **PlayerRenderer**, **SkiTrackRenderer**, **CollisionBurstRenderer**, **ShieldShatterRenderer**, **ShieldPickupRenderer**, **ShieldBubbleRenderer**, **ObstacleRenderer**, **CoinRenderer**, **SpeedBoostRenderer**, **WorldRenderer**, **Hud**, and **TouchControls** are wrapped in `React.memo`.
+- **SkiGameScreen**, **SkiGameRoot**, **SkiGameViewport**, **SkiGameBackground**, **PlayerRenderer**, **SkiTrackRenderer**, **SnowSurfaceRenderer**, **CollisionBurstRenderer**, **ShieldShatterRenderer**, **ShieldPickupRenderer**, **ShieldBubbleRenderer**, **ObstacleRenderer**, **CoinRenderer**, **SpeedBoostRenderer**, **WorldRenderer**, **Hud**, and **TouchControls** are wrapped in `React.memo`.
 - Input: **`engine.inputRef`** only — **TouchControls** uses stable `useCallback` handlers; no input `useState`.
 - Simulation: no per-frame `useState`; **WorldRenderer** uses Reanimated `useSharedValue` updated from `engine.onFrame`.
 - Styles use `StyleSheet.create` for stable references.

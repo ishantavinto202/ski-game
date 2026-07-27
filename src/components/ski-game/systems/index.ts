@@ -16,3 +16,4 @@ export { SpeedBoostSystem, SPEED_BOOST_SYSTEM_ID } from './SpeedBoostSystem';
 export { ChaserSystem, CHASER_SYSTEM_ID } from './ChaserSystem';
 export { GameOverSystem, GAME_OVER_SYSTEM_ID } from './GameOverSystem';
 export { RestartSystem, RESTART_SYSTEM_ID, playAgain, resetGame } from './RestartSystem';
+export { SnowSurfaceSystem, SNOW_SURFACE_SYSTEM_ID } from './SnowSurfaceSystem';

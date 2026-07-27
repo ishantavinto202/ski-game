@@ -1,78 +1,95 @@
 import { memo, useCallback, useMemo } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import {
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  useWindowDimensions,
+  View,
+} from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { COLLECTIBLE_GUIDE_ITEMS, OBSTACLE_GUIDE_ITEMS } from './scoring-guide-data';
 import { ScoringGuideRow } from './ScoringGuideRow';
 import type { ScoringGuideOverlayProps } from './ScoringGuideTypes';
-import { SCORING_GUIDE_OVERLAY_Z_INDEX } from './ScoringGuideTypes';
+import {
+  MENU_BORDER_RADIUS,
+  MENU_PANEL_BACKGROUND,
+  MENU_PANEL_BORDER,
+  MENU_SCRIM,
+  MENU_SECTION_ACCENT,
+  MENU_TEXT_PRIMARY,
+  SCORING_GUIDE_OVERLAY_Z_INDEX,
+} from './ScoringGuideTypes';
 
 const overlayStyles = StyleSheet.create({
   root: {
     ...StyleSheet.absoluteFillObject,
     zIndex: SCORING_GUIDE_OVERLAY_Z_INDEX,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   scrim: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(15, 23, 42, 0.62)',
+    backgroundColor: MENU_SCRIM,
   },
   panel: {
-    flex: 1,
-    marginHorizontal: 16,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: 'rgba(125, 211, 252, 0.35)',
-    backgroundColor: 'rgba(15, 23, 42, 0.94)',
+    width: '100%',
+    borderRadius: MENU_BORDER_RADIUS,
+    borderWidth: 2,
+    borderColor: MENU_PANEL_BORDER,
+    backgroundColor: MENU_PANEL_BACKGROUND,
     overflow: 'hidden',
   },
   header: {
+    height: 60,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: 16,
-    paddingBottom: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: 'rgba(148, 163, 184, 0.25)',
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: 'rgba(29, 53, 87, 0.22)',
   },
   title: {
-    flex: 1,
     textAlign: 'center',
-    fontSize: 20,
+    fontSize: 24,
     fontWeight: '800',
-    letterSpacing: 1.2,
-    color: '#F8FAFC',
-    paddingHorizontal: 44,
+    letterSpacing: 1,
+    color: MENU_TEXT_PRIMARY,
+    paddingHorizontal: 40,
   },
   closeHit: {
     position: 'absolute',
-    right: 8,
+    right: 12,
     width: 44,
     height: 44,
-    borderRadius: 22,
     alignItems: 'center',
     justifyContent: 'center',
   },
   closeLabel: {
     fontSize: 22,
     fontWeight: '700',
-    color: '#E2E8F0',
+    color: MENU_TEXT_PRIMARY,
     lineHeight: 24,
   },
   scroll: {
-    flex: 1,
+    flexGrow: 0,
   },
   scrollContent: {
     paddingHorizontal: 14,
-    paddingTop: 14,
-    gap: 8,
+    paddingTop: 12,
+    gap: 4,
   },
   sectionLabel: {
-    marginTop: 6,
+    marginTop: 4,
     marginBottom: 8,
-    fontSize: 13,
+    fontSize: 15,
     fontWeight: '800',
-    letterSpacing: 1.1,
-    color: '#7DD3FC',
+    letterSpacing: 0.8,
+    color: MENU_SECTION_ACCENT,
+  },
+  obstaclesSectionLabel: {
+    marginTop: 10,
   },
 });
 
@@ -80,24 +97,33 @@ export const ScoringGuideOverlay = memo(function ScoringGuideOverlay({
   onClose,
 }: ScoringGuideOverlayProps) {
   const insets = useSafeAreaInsets();
+  const { width: viewportWidth, height: viewportHeight } = useWindowDimensions();
 
   const handleClose = useCallback(() => {
     onClose();
   }, [onClose]);
 
+  const panelMaxHeight = viewportHeight * 0.8;
+  const headerHeight = 60;
+
   const panelStyle = useMemo(
     () => [
       overlayStyles.panel,
       {
-        marginTop: Math.max(insets.top, 12) + 8,
-        marginBottom: Math.max(insets.bottom, 12) + 8,
+        width: viewportWidth * 0.9,
+        maxHeight: panelMaxHeight,
       },
     ],
-    [insets.bottom, insets.top],
+    [panelMaxHeight, viewportWidth],
+  );
+
+  const scrollStyle = useMemo(
+    () => [overlayStyles.scroll, { maxHeight: panelMaxHeight - headerHeight }],
+    [panelMaxHeight],
   );
 
   const scrollContentStyle = useMemo(
-    () => [overlayStyles.scrollContent, { paddingBottom: Math.max(insets.bottom, 16) + 24 }],
+    () => [overlayStyles.scrollContent, { paddingBottom: Math.max(insets.bottom, 12) + 16 }],
     [insets.bottom],
   );
 
@@ -110,7 +136,7 @@ export const ScoringGuideOverlay = memo(function ScoringGuideOverlay({
           <Pressable
             accessibilityRole="button"
             accessibilityLabel="Close scoring guide"
-            hitSlop={10}
+            hitSlop={8}
             onPress={handleClose}
             style={overlayStyles.closeHit}
           >
@@ -118,9 +144,10 @@ export const ScoringGuideOverlay = memo(function ScoringGuideOverlay({
           </Pressable>
         </View>
         <ScrollView
-          style={overlayStyles.scroll}
+          style={scrollStyle}
           contentContainerStyle={scrollContentStyle}
           showsVerticalScrollIndicator
+          bounces
         >
           <Text style={overlayStyles.sectionLabel}>COLLECTIBLES & BOOSTERS</Text>
           {COLLECTIBLE_GUIDE_ITEMS.map((item, index) => (
@@ -130,7 +157,9 @@ export const ScoringGuideOverlay = memo(function ScoringGuideOverlay({
               isLastInSection={index === COLLECTIBLE_GUIDE_ITEMS.length - 1}
             />
           ))}
-          <Text style={overlayStyles.sectionLabel}>OBSTACLES</Text>
+          <Text style={[overlayStyles.sectionLabel, overlayStyles.obstaclesSectionLabel]}>
+            OBSTACLES
+          </Text>
           {OBSTACLE_GUIDE_ITEMS.map((item, index) => (
             <ScoringGuideRow
               key={item.id}

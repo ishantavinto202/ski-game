@@ -1,12 +1,18 @@
 import type { ImageSourcePropType } from 'react-native';
 
 import {
+  CABIN_ASSET_METADATA,
+  LARGE_BOULDER_ASSET_METADATA,
+  SMALL_ROCK_ASSET_METADATA,
+  TREE_STUMP_ASSET_METADATA,
+  TREE_VISUAL_ASSETS,
+  WOODEN_FENCE_ASSET_METADATA,
   cabinAsset,
   largeBoulderAsset,
   smallRockAsset,
   treeStumpAsset,
-  treeVisualAssets,
   woodenFenceAsset,
+  type ObstacleAssetMetadata,
 } from '../utils/obstacle-assets';
 import { GAME_CONFIG } from '../utils/GameConfig';
 import {
@@ -15,16 +21,18 @@ import {
   type ObstacleConsequence,
 } from '../utils/score-consequences';
 
-import type { ScoringGuideItem } from './ScoringGuideTypes';
+import type { GuideAssetLayout, ScoringGuideItem } from './ScoringGuideTypes';
+import { SCORING_GUIDE_PREVIEW_SIZE } from './ScoringGuideTypes';
 
 /** Representative tree visual for the guide (all tree PNGs share one gameplay entry). */
-const treeGuideAsset = treeVisualAssets[0];
+const treeGuideAsset = TREE_VISUAL_ASSETS[0].source;
+const treeGuideMetadata = TREE_VISUAL_ASSETS[0].metadata;
 
-const COIN_ATLAS = require('../../../../assets/assets/Coin Animations/texture.png') as number;
-const SHIELD_ATLAS =
-  require('../../../../assets/assets/Shield Animations/shield-sprite.png') as number;
-const SPEED_BOOST_ATLAS =
-  require('../../../../assets/assets/Thunder Animations/speed-boost-sprite.png') as number;
+/** Scoring Guide thumbnails only — gameplay pickup atlases stay on their renderers. */
+const COIN_GUIDE_ASSET = require('../../../../assets/voxel assets/Coin.png') as number;
+const SHIELD_GUIDE_ASSET = require('../../../../assets/voxel assets/Sheld Guide.png') as number;
+const SPEED_BOOST_GUIDE_ASSET =
+  require('../../../../assets/voxel assets/Blue_Thunder_Asset.png') as number;
 
 function formatScoreDelta(delta: number): string {
   if (delta > 0) {
@@ -33,21 +41,22 @@ function formatScoreDelta(delta: number): string {
   return `${delta}`;
 }
 
-function formatDurationSec(durationMs: number): string {
-  const seconds = Math.round(durationMs / 1000);
-  return `${seconds} SEC`;
+function formatDurationValue(durationMs: number): string {
+  return `${Math.round(durationMs / 1000)}`;
 }
 
 function formatSpeedMultiplier(multiplier: number): string {
   const text = Number.isInteger(multiplier)
     ? `${multiplier}`
     : multiplier.toFixed(2).replace(/0+$/, '').replace(/\.$/, '');
-  return `${text}× SPEED`;
+  return `${text}×`;
 }
 
 function formatObstacleEffects(consequence: ObstacleConsequence): {
   primaryEffect: string;
   secondaryEffect?: string;
+  scorePenalty: number;
+  healthPenalty?: number;
   effectTone: 'negative';
 } {
   const scoreText = formatScoreDelta(consequence.scoreDelta);
@@ -55,18 +64,44 @@ function formatObstacleEffects(consequence: ObstacleConsequence): {
     return {
       primaryEffect: scoreText,
       secondaryEffect: `♥ -${consequence.healthDamage}`,
+      scorePenalty: consequence.scoreDelta,
+      healthPenalty: consequence.healthDamage,
       effectTone: 'negative',
     };
   }
   return {
     primaryEffect: scoreText,
     secondaryEffect: 'SCORE',
+    scorePenalty: consequence.scoreDelta,
     effectTone: 'negative',
   };
 }
 
-const shieldDurationLabel = formatDurationSec(GAME_CONFIG.SHIELD_DURATION_MS);
-const boostDurationLabel = formatDurationSec(GAME_CONFIG.SPEED_BOOST_DURATION_MS);
+/**
+ * Centers the opaque object body inside the guide preview box.
+ * Presentation-only — does not alter gameplay layouts.
+ */
+function createGuideObjectLayout(
+  metadata: ObstacleAssetMetadata,
+  targetObjectMax: number,
+): GuideAssetLayout {
+  const scale = Math.min(
+    targetObjectMax / metadata.objectWidth,
+    targetObjectMax / metadata.objectHeight,
+  );
+  const objectCenterX = (metadata.objectOffsetX + metadata.objectWidth / 2) * scale;
+  const objectCenterY = (metadata.objectOffsetY + metadata.objectHeight / 2) * scale;
+
+  return {
+    width: metadata.canvasWidth * scale,
+    height: metadata.canvasHeight * scale,
+    offsetX: SCORING_GUIDE_PREVIEW_SIZE / 2 - objectCenterX,
+    offsetY: SCORING_GUIDE_PREVIEW_SIZE / 2 - objectCenterY,
+  };
+}
+
+const shieldDurationValue = formatDurationValue(GAME_CONFIG.SHIELD_DURATION_MS);
+const boostDurationValue = formatDurationValue(GAME_CONFIG.SPEED_BOOST_DURATION_MS);
 const boostMultiplierLabel = formatSpeedMultiplier(GAME_CONFIG.SPEED_BOOST_MULTIPLIER);
 
 export const COLLECTIBLE_GUIDE_ITEMS: readonly ScoringGuideItem[] = [
@@ -75,32 +110,38 @@ export const COLLECTIBLE_GUIDE_ITEMS: readonly ScoringGuideItem[] = [
     category: 'collectible',
     title: 'Coin',
     description: 'Collect for score',
-    asset: COIN_ATLAS as ImageSourcePropType,
-    assetFrame: { x: 0, y: 248, w: 259, h: 248, atlasW: 1036, atlasH: 1240 },
-    primaryEffect: formatScoreDelta(COIN_COLLECT_SCORE),
-    secondaryEffect: 'SCORE',
+    asset: COIN_GUIDE_ASSET as ImageSourcePropType,
+    benefitChips: [
+      {
+        value: formatScoreDelta(COIN_COLLECT_SCORE),
+        label: 'SCORE',
+        tone: 'positive',
+      },
+    ],
     effectTone: 'positive',
   },
   {
     id: 'shield',
     category: 'collectible',
     title: 'Shield',
-    description: 'Protects you from a hit',
-    asset: SHIELD_ATLAS as ImageSourcePropType,
-    assetFrame: { x: 179, y: 0, w: 179, h: 196, atlasW: 895, atlasH: 980 },
-    primaryEffect: 'BLOCKS 1 HIT',
-    secondaryEffect: shieldDurationLabel,
+    description: 'Protects from one hit',
+    asset: SHIELD_GUIDE_ASSET as ImageSourcePropType,
+    benefitChips: [
+      { value: '1', label: 'HIT', tone: 'shield' },
+      { value: shieldDurationValue, label: 'SEC', tone: 'shield' },
+    ],
     effectTone: 'neutral',
   },
   {
     id: 'speed_boost',
     category: 'collectible',
     title: 'Speed Boost',
-    description: 'Temporary downhill speed boost',
-    asset: SPEED_BOOST_ATLAS as ImageSourcePropType,
-    assetFrame: { x: 174, y: 0, w: 174, h: 258, atlasW: 1044, atlasH: 1032 },
-    primaryEffect: boostMultiplierLabel,
-    secondaryEffect: boostDurationLabel,
+    description: 'Temporary speed boost',
+    asset: SPEED_BOOST_GUIDE_ASSET as ImageSourcePropType,
+    benefitChips: [
+      { value: boostMultiplierLabel, label: 'SPEED', tone: 'boost' },
+      { value: boostDurationValue, label: 'SEC', tone: 'boost' },
+    ],
     effectTone: 'positive',
   },
 ];
@@ -117,60 +158,72 @@ export const OBSTACLE_GUIDE_ITEMS: readonly ScoringGuideItem[] = [
     id: 'small_rock',
     category: 'obstacle',
     title: 'Small Rock',
-    description: 'Small snow-covered hazard',
     asset: smallRockAsset as ImageSourcePropType,
+    guideAssetLayout: createGuideObjectLayout(SMALL_ROCK_ASSET_METADATA, 44),
     primaryEffect: smallRockEffects.primaryEffect,
     secondaryEffect: smallRockEffects.secondaryEffect,
+    scorePenalty: smallRockEffects.scorePenalty,
+    healthPenalty: smallRockEffects.healthPenalty,
     effectTone: smallRockEffects.effectTone,
   },
   {
     id: 'large_boulder',
     category: 'obstacle',
     title: 'Large Boulder',
-    description: 'Large mountain obstacle',
     asset: largeBoulderAsset as ImageSourcePropType,
+    guideAssetLayout: createGuideObjectLayout(LARGE_BOULDER_ASSET_METADATA, 46),
     primaryEffect: largeBoulderEffects.primaryEffect,
     secondaryEffect: largeBoulderEffects.secondaryEffect,
+    scorePenalty: largeBoulderEffects.scorePenalty,
+    healthPenalty: largeBoulderEffects.healthPenalty,
     effectTone: largeBoulderEffects.effectTone,
   },
   {
     id: 'tree',
     category: 'obstacle',
     title: 'Tree',
-    description: 'Avoid the alpine trees',
     asset: treeGuideAsset as ImageSourcePropType,
+    guideAssetLayout: createGuideObjectLayout(treeGuideMetadata, 46),
     primaryEffect: treeEffects.primaryEffect,
     secondaryEffect: treeEffects.secondaryEffect,
+    scorePenalty: treeEffects.scorePenalty,
+    healthPenalty: treeEffects.healthPenalty,
     effectTone: treeEffects.effectTone,
   },
   {
     id: 'tree_stump',
     category: 'obstacle',
     title: 'Tree Stump',
-    description: 'Low snow-covered obstacle',
     asset: treeStumpAsset as ImageSourcePropType,
+    guideAssetLayout: createGuideObjectLayout(TREE_STUMP_ASSET_METADATA, 42),
     primaryEffect: treeStumpEffects.primaryEffect,
     secondaryEffect: treeStumpEffects.secondaryEffect,
+    scorePenalty: treeStumpEffects.scorePenalty,
+    healthPenalty: treeStumpEffects.healthPenalty,
     effectTone: treeStumpEffects.effectTone,
   },
   {
     id: 'cabin',
     category: 'obstacle',
     title: 'Cabin',
-    description: 'Large mountain obstacle',
     asset: cabinAsset as ImageSourcePropType,
+    guideAssetLayout: createGuideObjectLayout(CABIN_ASSET_METADATA, 48),
     primaryEffect: cabinEffects.primaryEffect,
     secondaryEffect: cabinEffects.secondaryEffect,
+    scorePenalty: cabinEffects.scorePenalty,
+    healthPenalty: cabinEffects.healthPenalty,
     effectTone: cabinEffects.effectTone,
   },
   {
     id: 'wooden_fence',
     category: 'obstacle',
     title: 'Wooden Fence',
-    description: 'Blocks part of your route',
     asset: woodenFenceAsset as ImageSourcePropType,
+    guideAssetLayout: createGuideObjectLayout(WOODEN_FENCE_ASSET_METADATA, 50),
     primaryEffect: woodenFenceEffects.primaryEffect,
     secondaryEffect: woodenFenceEffects.secondaryEffect,
+    scorePenalty: woodenFenceEffects.scorePenalty,
+    healthPenalty: woodenFenceEffects.healthPenalty,
     effectTone: woodenFenceEffects.effectTone,
   },
 ];

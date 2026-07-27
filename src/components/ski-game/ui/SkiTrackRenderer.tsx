@@ -3,18 +3,26 @@ import { StyleSheet, View } from 'react-native';
 import Animated, { useAnimatedStyle, useSharedValue, type SharedValue } from 'react-native-reanimated';
 
 import {
+  getChaserSkiTrackState,
   getSkiTrackSegmentSlotIndices,
   getSkiTrackState,
   isSkiTrackSegmentVisible,
   readSkiTrackSegmentLayout,
   syncSkiTrackRendererFrame,
 } from '../effects/SkiTrack';
-import type { ViewportSize } from '../engine/GameEngine';
+import type { GameEngine, ViewportSize } from '../engine/GameEngine';
 import { useGameEngineContext } from '../engine/GameEngineContext';
+import type { SkiTrackState } from '../types/SkiTrackTypes';
 import { SKI_GAME_COLORS } from '../utils/colors';
 import { GAME_CONFIG } from '../utils/GameConfig';
 
 const SEGMENT_SLOT_INDICES = getSkiTrackSegmentSlotIndices();
+
+export type SkiTrackOwner = 'player' | 'chaser';
+
+function resolveTrackState(engine: GameEngine, owner: SkiTrackOwner): SkiTrackState {
+  return owner === 'player' ? getSkiTrackState(engine) : getChaserSkiTrackState(engine);
+}
 
 const layerStyle = StyleSheet.create({
   root: {
@@ -64,11 +72,13 @@ const SkiTrackStroke = memo(function SkiTrackStroke({
 });
 
 type SkiTrackSegmentSlotProps = {
+  owner: SkiTrackOwner;
   segmentIndex: number;
   viewport: ViewportSize;
 };
 
 const SkiTrackSegmentSlot = memo(function SkiTrackSegmentSlot({
+  owner,
   segmentIndex,
   viewport,
 }: SkiTrackSegmentSlotProps) {
@@ -85,7 +95,7 @@ const SkiTrackSegmentSlot = memo(function SkiTrackSegmentSlot({
 
   useEffect(() => {
     return engine.onFrame(() => {
-      const state = getSkiTrackState(engine);
+      const state = resolveTrackState(engine, owner);
       if (segmentIndex >= state.activeSegmentCount) {
         opacity.value = 0;
         return;
@@ -129,6 +139,7 @@ const SkiTrackSegmentSlot = memo(function SkiTrackSegmentSlot({
     leftCenterY,
     length,
     opacity,
+    owner,
     rightCenterX,
     rightCenterY,
     segmentIndex,
@@ -158,6 +169,26 @@ const SkiTrackSegmentSlot = memo(function SkiTrackSegmentSlot({
   );
 });
 
+type SkiTrackLayerProps = {
+  owner: SkiTrackOwner;
+  viewport: ViewportSize;
+};
+
+const SkiTrackLayer = memo(function SkiTrackLayer({ owner, viewport }: SkiTrackLayerProps) {
+  return (
+    <View style={layerStyle.root} pointerEvents="none">
+      {SEGMENT_SLOT_INDICES.map((segmentIndex) => (
+        <SkiTrackSegmentSlot
+          key={`${owner}-${segmentIndex}`}
+          owner={owner}
+          segmentIndex={segmentIndex}
+          viewport={viewport}
+        />
+      ))}
+    </View>
+  );
+});
+
 type SkiTrackRendererProps = {
   viewport: ViewportSize;
 };
@@ -173,9 +204,8 @@ export const SkiTrackRenderer = memo(function SkiTrackRenderer({ viewport }: Ski
 
   return (
     <View style={layerStyle.root} pointerEvents="none">
-      {SEGMENT_SLOT_INDICES.map((segmentIndex) => (
-        <SkiTrackSegmentSlot key={segmentIndex} segmentIndex={segmentIndex} viewport={viewport} />
-      ))}
+      <SkiTrackLayer owner="player" viewport={viewport} />
+      <SkiTrackLayer owner="chaser" viewport={viewport} />
     </View>
   );
 });

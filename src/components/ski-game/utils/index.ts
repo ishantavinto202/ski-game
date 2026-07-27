@@ -107,6 +107,21 @@ export {
   type ObstacleCollisionLayout,
   type ObstacleVariantAssetConfig,
 } from './obstacle-assets';
+export {
+  SNOW_SURFACE_ASSETS,
+  SNOW_SURFACE_ASSET_COUNT,
+  SNOW_SURFACE_SPAWN_WEIGHT_TOTAL,
+  resolveSnowSurfaceBaseHeight,
+  type SnowSurfaceAssetDef,
+} from './snow-surface-assets';
 export { OBSTACLE_VARIANT_RENDER_INDEX } from './obstacle-variant-index';
 export { aabbIntersectsWithPadding } from './collision';
 export { isCoinRectVisible, getCoinRenderMargin } from './coin-render';
+export {
+  PLAYER_ATLAS,
+  PLAYER_ATLAS_TEXTURE,
+  CHASER_ATLAS_TEXTURE,
+  PLAYER_SPRITE_FRAME_COUNT,
+  PLAYER_SPRITE_SOURCE_WIDTH,
+  PLAYER_SPRITE_SOURCE_HEIGHT,
+} from './player-sprite';

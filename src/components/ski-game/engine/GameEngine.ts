@@ -3,6 +3,7 @@ import { createDecorativeTreePoolState } from '../entities/DecorativeTree';
 import { createObstaclePoolState } from '../entities/Obstacle';
 import type { Player } from '../entities/Player';
 import { createShieldPoolState } from '../entities/Shield';
+import { createSnowSurfacePoolState } from '../entities/SnowSurface';
 import { createSpeedBoostPoolState } from '../entities/SpeedBoost';
 import type { GameSystem } from '../types';
 import { createInitialCameraState, type CameraState } from '../types/camera-state';
@@ -23,6 +24,7 @@ import { createInitialMovementState, type MovementState } from '../types/movemen
 import type { ObstaclePoolState } from '../types/ObstacleTypes';
 import { createInitialPlayerFeelState, type PlayerFeelState } from '../types/player-feel-state';
 import type { ShieldPoolState } from '../types/ShieldTypes';
+import type { SnowSurfacePoolState } from '../types/SnowSurfaceTypes';
 import { createInitialSpawnManagerState, type SpawnManagerState } from '../types/SpawnTypes';
 import type { SpeedBoostPoolState } from '../types/SpeedBoostTypes';
 import { createInitialTimeState, type TimeState } from '../types/time-state';
@@ -51,6 +53,9 @@ export class GameEngine {
   readonly obstacleRef: EngineRef<ObstaclePoolState> = { current: createObstaclePoolState() };
   readonly decorativeTreeRef: EngineRef<DecorativeTreePoolState> = {
     current: createDecorativeTreePoolState(),
+  };
+  readonly snowSurfaceRef: EngineRef<SnowSurfacePoolState> = {
+    current: createSnowSurfacePoolState(),
   };
   readonly collisionRef: EngineRef<CollisionState> = { current: createInitialCollisionState() };
   readonly healthRef: EngineRef<HealthState> = { current: createInitialHealthState() };

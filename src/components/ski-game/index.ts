@@ -42,6 +42,8 @@ export {
   GAME_OVER_SYSTEM_ID,
   RestartSystem,
   RESTART_SYSTEM_ID,
+  SnowSurfaceSystem,
+  SNOW_SURFACE_SYSTEM_ID,
 } from './systems';
 export {
   createObstaclePoolState,
@@ -62,7 +64,7 @@ export {
   resetGame,
 } from './entities';
 export { playAgain } from './systems/RestartSystem';
-export { PlayerRenderer, WorldRenderer, TouchControls, ObstacleRenderer, CoinRenderer, SpeedBoostRenderer, ShieldPickupRenderer, SkiTrackRenderer, CollisionBurstRenderer, ShieldShatterRenderer, ChaserRenderer, ShieldBubbleRenderer, Hud, PauseButton, PauseOverlay, GameOverOverlay, ScoringGuideOverlay, ScoringGuideInfoButton } from './ui';
+export { PlayerRenderer, WorldRenderer, TouchControls, ObstacleRenderer, CoinRenderer, SpeedBoostRenderer, ShieldPickupRenderer, SkiTrackRenderer, SnowSurfaceRenderer, CollisionBurstRenderer, ShieldShatterRenderer, ChaserRenderer, ShieldBubbleRenderer, Hud, PauseButton, PauseOverlay, GameOverOverlay, ScoringGuideOverlay } from './ui';
 export type { PauseOverlayProps, PauseQuitHandler, GameOverOverlayProps, GameOverActionHandler, ScoringGuideOverlayProps } from './ui';
 export type {
   GameSystem,
@@ -93,6 +95,8 @@ export type {
   ShieldPoolState,
   SpeedBoostRecord,
   SpeedBoostPoolState,
+  SnowSurfaceRecord,
+  SnowSurfacePoolState,
 } from './types';
 export {
   SKI_GAME_COLORS,

@@ -4,6 +4,7 @@ import { tickSkiTrackSampling } from '../effects/SkiTrack';
 
 export const SKI_TRACK_SYSTEM_ID = 'ski-track-system';
 
+/** Samples player + chaser ski tracks (visual only). Runs after ChaserSystem. */
 export class SkiTrackSystem implements GameSystem {
   readonly id = SKI_TRACK_SYSTEM_ID;
 

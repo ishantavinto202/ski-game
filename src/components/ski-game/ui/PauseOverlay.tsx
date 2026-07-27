@@ -13,8 +13,10 @@ import {
   PAUSE_PLACEHOLDER_QUIT,
   type PauseOverlayProps,
 } from './PauseTypes';
-import { ScoringGuideInfoButton } from './ScoringGuideInfoButton';
 import { ScoringGuideOverlay } from './ScoringGuideOverlay';
+import { MENU_MODAL_HORIZONTAL_PADDING } from './ScoringGuideTypes';
+
+const PAUSE_BUTTON_GAP = 14;
 
 const overlayStyles = StyleSheet.create({
   root: {
@@ -28,23 +30,29 @@ const overlayStyles = StyleSheet.create({
     backgroundColor: `rgba(15, 23, 42, ${PAUSE_OVERLAY_SCRIM_OPACITY})`,
   },
   panel: {
-    position: 'relative',
     minWidth: 220,
-    paddingTop: 28,
+    paddingTop: 24,
     paddingBottom: 24,
-    paddingHorizontal: 28,
+    paddingHorizontal: MENU_MODAL_HORIZONTAL_PADDING,
     borderRadius: 12,
     borderWidth: 2,
     borderColor: SKI_GAME_COLORS.playerPlaceholderBorder,
     backgroundColor: 'rgba(255, 255, 255, 0.94)',
     alignItems: 'center',
-    gap: 16,
   },
   title: {
+    marginBottom: 28,
     fontSize: 22,
     fontWeight: '800',
     letterSpacing: 1,
     color: SKI_GAME_COLORS.playerPlaceholderBorder,
+    textAlign: 'center',
+    alignSelf: 'center',
+  },
+  buttonStack: {
+    width: '100%',
+    gap: PAUSE_BUTTON_GAP,
+    alignItems: 'stretch',
   },
   action: {
     minWidth: 160,
@@ -102,18 +110,26 @@ export const PauseOverlay = memo(function PauseOverlay({ onQuitPress = PAUSE_PLA
     <Animated.View style={[overlayStyles.root, containerStyle]} pointerEvents="auto">
       <View style={overlayStyles.scrim} pointerEvents="none" />
       <View style={overlayStyles.panel}>
-        <ScoringGuideInfoButton onPress={handleOpenScoringGuide} />
         <Text style={overlayStyles.title}>PAUSED</Text>
-        <Pressable accessibilityRole="button" onPress={handleResumePress} style={overlayStyles.action}>
-          <Text style={overlayStyles.actionLabel}>Resume</Text>
-        </Pressable>
-        <Pressable
-          accessibilityRole="button"
-          onPress={handleQuitPress}
-          style={[overlayStyles.action, overlayStyles.quitAction]}
-        >
-          <Text style={overlayStyles.actionLabel}>Quit</Text>
-        </Pressable>
+        <View style={overlayStyles.buttonStack}>
+          <Pressable accessibilityRole="button" onPress={handleResumePress} style={overlayStyles.action}>
+            <Text style={overlayStyles.actionLabel}>Resume</Text>
+          </Pressable>
+          <Pressable
+            accessibilityRole="button"
+            onPress={handleOpenScoringGuide}
+            style={overlayStyles.action}
+          >
+            <Text style={overlayStyles.actionLabel}>Scoring Guide</Text>
+          </Pressable>
+          <Pressable
+            accessibilityRole="button"
+            onPress={handleQuitPress}
+            style={[overlayStyles.action, overlayStyles.quitAction]}
+          >
+            <Text style={overlayStyles.actionLabel}>Quit</Text>
+          </Pressable>
+        </View>
       </View>
       {isScoringGuideOpen ? <ScoringGuideOverlay onClose={handleCloseScoringGuide} /> : null}
     </Animated.View>

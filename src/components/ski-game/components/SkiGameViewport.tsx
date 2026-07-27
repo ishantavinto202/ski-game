@@ -20,6 +20,7 @@ import { GameplayFeedbackRenderer } from '../ui/GameplayFeedbackRenderer';
 import { ShieldShatterRenderer } from '../ui/ShieldShatterRenderer';
 import { ChaserRenderer } from '../ui/ChaserRenderer';
 import { SkiTrackRenderer } from '../ui/SkiTrackRenderer';
+import { SnowSurfaceRenderer } from '../ui/SnowSurfaceRenderer';
 import { TouchControls } from '../ui/TouchControls';
 import { WorldRenderer } from '../ui/WorldRenderer';
 import { EdgeTreeRenderer } from '../ui/EdgeTreeRenderer';
@@ -45,10 +46,14 @@ export const SkiGameViewport = memo(function SkiGameViewport() {
     <View style={viewportStyle.root} onLayout={onLayout}>
       <SkiGameBackground />
       {viewport ? <WorldRenderer viewport={viewport} /> : null}
+      {viewport ? <SnowSurfaceRenderer viewport={viewport} /> : null}
       {viewport ? <SkiTrackRenderer viewport={viewport} /> : null}
       {viewport && GAME_CONFIG.DECORATIVE_TREES_ENABLED ? (
         <EdgeTreeRenderer viewport={viewport} />
       ) : null}
+      {playerSnapshot ? <ChaserRenderer /> : null}
+      {playerSnapshot ? <ShieldBubbleRenderer player={playerSnapshot} /> : null}
+      {playerSnapshot ? <PlayerRenderer player={playerSnapshot} /> : null}
       {viewport ? <ObstacleRenderer viewport={viewport} /> : null}
       {viewport ? <CoinRenderer viewport={viewport} /> : null}
       {viewport ? <SpeedBoostRenderer viewport={viewport} /> : null}
@@ -56,9 +61,6 @@ export const SkiGameViewport = memo(function SkiGameViewport() {
       {viewport ? <ShieldRockOverlapDebug viewport={viewport} /> : null}
       {viewport ? <CollisionBurstRenderer viewport={viewport} /> : null}
       {viewport ? <ShieldShatterRenderer viewport={viewport} /> : null}
-      {playerSnapshot ? <ChaserRenderer /> : null}
-      {playerSnapshot ? <ShieldBubbleRenderer player={playerSnapshot} /> : null}
-      {playerSnapshot ? <PlayerRenderer player={playerSnapshot} /> : null}
       {viewport ? <GameplayFeedbackRenderer viewport={viewport} /> : null}
       <Hud />
       <TouchControls />

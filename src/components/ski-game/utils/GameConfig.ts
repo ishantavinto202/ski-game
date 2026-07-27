@@ -8,6 +8,19 @@ export const GAME_CONFIG = {
 
   PLAYER_WIDTH: 44,
   PLAYER_HEIGHT: 64,
+  /**
+   * Visual skier render size (keeps atlas aspect 304×273).
+   * Independent of gameplay / collision footprint (`PLAYER_WIDTH` / `PLAYER_HEIGHT`).
+   */
+  PLAYER_VISUAL_WIDTH: 71,
+  PLAYER_VISUAL_HEIGHT: 64,
+  /** Rendering-only offset from gameplay center (px). Does not move world/collision. */
+  PLAYER_VISUAL_OFFSET_X: 0,
+  PLAYER_VISUAL_OFFSET_Y: 0,
+  /** Skier sprite-sheet animation rate (independent of 60 FPS render). */
+  PLAYER_SPRITE_ANIMATION_FPS: 12,
+  /** Draw translucent gameplay AABB over the skier (development tuning only). */
+  DEBUG_PLAYER_HITBOX: false,
   /** Normalized horizontal center (0–1) of the player on the game viewport. */
   PLAYER_START_X: 0.5,
   /**
@@ -164,6 +177,30 @@ export const GAME_CONFIG = {
   EDGE_TREE_CLUSTER_GAP_MAX: 560,
   MAX_DECORATIVE_TREES: 128,
   DECORATIVE_TREE_DESPAWN_MARGIN: 64,
+
+  /** Cosmetic snow-surface imperfections (visual only — no collision). */
+  MAX_SNOW_SURFACE_DETAILS: 24,
+  /** Authored PNG opacity multiplier (1 = as authored). */
+  SNOW_SURFACE_OPACITY: 0.72,
+  SNOW_SURFACE_SCALE_MIN: 0.8,
+  SNOW_SURFACE_SCALE_MAX: 1.15,
+  /** Placement-time exclusion around obstacle visual bounds (px). */
+  SNOW_SURFACE_PLACEMENT_OBSTACLE_PADDING: 24,
+  /** Runtime cull padding — tighter so details may sit near obstacles without large holes. */
+  SNOW_SURFACE_RUNTIME_OBSTACLE_PADDING: 12,
+  /** Bounded X retries when a candidate overlaps an obstacle visual footprint. */
+  SNOW_SURFACE_MAX_PLACEMENT_ATTEMPTS: 6,
+  /** Irregular vertical gaps between placements (px). */
+  SNOW_SURFACE_SPACING_MIN: 70,
+  SNOW_SURFACE_SPACING_MAX: 150,
+  /** Horizontal inset from viewport edges for detail centers (px). */
+  SNOW_SURFACE_HORIZONTAL_PADDING: 16,
+  /** World Y lead above scroll top before first placement (keeps start area clean). */
+  SNOW_SURFACE_INITIAL_LEAD: 120,
+  /** How far ahead of scroll top to keep the pool filled (px). */
+  SNOW_SURFACE_LOOKAHEAD: 1000,
+  SNOW_SURFACE_DESPAWN_MARGIN: 64,
+  SNOW_SURFACE_RENDER_MARGIN: 64,
 
   /** World-space dual ski track carved into the snow (visual only). */
   SKI_TRACK_MAX_POINTS: 48,

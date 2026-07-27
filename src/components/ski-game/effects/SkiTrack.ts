@@ -5,7 +5,12 @@ import { GAME_CONFIG } from '../utils/GameConfig';
 
 const MAX_SEGMENTS = GAME_CONFIG.SKI_TRACK_MAX_POINTS - 1;
 
-const engineStates = new WeakMap<GameEngine, SkiTrackState>();
+type SkiTrackBundle = {
+  player: SkiTrackState;
+  chaser: SkiTrackState;
+};
+
+const engineStates = new WeakMap<GameEngine, SkiTrackBundle>();
 
 const segmentSlotIndices: number[] = [];
 for (let index = 0; index < MAX_SEGMENTS; index += 1) {
@@ -41,13 +46,24 @@ export function createSkiTrackState(): SkiTrackState {
   };
 }
 
-export function getSkiTrackState(engine: GameEngine): SkiTrackState {
-  let state = engineStates.get(engine);
-  if (!state) {
-    state = createSkiTrackState();
-    engineStates.set(engine, state);
+function getSkiTrackBundle(engine: GameEngine): SkiTrackBundle {
+  let bundle = engineStates.get(engine);
+  if (!bundle) {
+    bundle = {
+      player: createSkiTrackState(),
+      chaser: createSkiTrackState(),
+    };
+    engineStates.set(engine, bundle);
   }
-  return state;
+  return bundle;
+}
+
+export function getSkiTrackState(engine: GameEngine): SkiTrackState {
+  return getSkiTrackBundle(engine).player;
+}
+
+export function getChaserSkiTrackState(engine: GameEngine): SkiTrackState {
+  return getSkiTrackBundle(engine).chaser;
 }
 
 export function getSkiTrackSegmentSlotIndices(): readonly number[] {
@@ -61,6 +77,12 @@ export function resetSkiTrackState(state: SkiTrackState): void {
   state.lastSampleWorldX = 0;
   state.lastSampleWorldY = 0;
   state.activeSegmentCount = 0;
+}
+
+export function resetAllSkiTrackStates(engine: GameEngine): void {
+  const bundle = getSkiTrackBundle(engine);
+  resetSkiTrackState(bundle.player);
+  resetSkiTrackState(bundle.chaser);
 }
 
 function pushTrackPoint(state: SkiTrackState, worldX: number, worldY: number): void {
@@ -87,21 +109,54 @@ function popOldestTrackPoint(state: SkiTrackState): void {
   state.count -= 1;
 }
 
+function resolveFeetWorldPosition(
+  screenX: number,
+  screenY: number,
+  width: number,
+  height: number,
+  scrollOffsetY: number,
+  cameraOffsetX: number,
+): { worldX: number; worldY: number } {
+  const centerScreenX = screenX + width * 0.5;
+  const feetScreenY = screenY + height;
+
+  return {
+    worldX: centerScreenX + cameraOffsetX,
+    worldY: scrollOffsetY - feetScreenY,
+  };
+}
+
 function resolvePlayerFeetWorldPosition(engine: GameEngine): { worldX: number; worldY: number } | null {
   const player = engine.playerRef.current;
   if (!player) {
     return null;
   }
 
-  const scrollOffsetY = engine.worldRef.current.scrollOffsetY;
-  const cameraOffsetX = engine.cameraRef.current.offsetX;
-  const centerScreenX = player.x + player.width * 0.5;
-  const feetScreenY = player.y + player.height;
+  return resolveFeetWorldPosition(
+    player.x,
+    player.y,
+    player.width,
+    player.height,
+    engine.worldRef.current.scrollOffsetY,
+    engine.cameraRef.current.offsetX,
+  );
+}
 
-  return {
-    worldX: centerScreenX + cameraOffsetX,
-    worldY: scrollOffsetY - feetScreenY,
-  };
+function resolveChaserFeetWorldPosition(engine: GameEngine): { worldX: number; worldY: number } | null {
+  const player = engine.playerRef.current;
+  if (!player) {
+    return null;
+  }
+
+  const chaser = engine.chaserRef.current;
+  return resolveFeetWorldPosition(
+    chaser.x,
+    chaser.y,
+    GAME_CONFIG.CHASER_WIDTH,
+    GAME_CONFIG.CHASER_HEIGHT,
+    engine.worldRef.current.scrollOffsetY,
+    engine.cameraRef.current.offsetX,
+  );
 }
 
 function pruneTrackPointsBelowViewport(
@@ -129,20 +184,12 @@ function pruneTrackPointsBelowViewport(
   }
 }
 
-export function tickSkiTrackSampling(engine: GameEngine, fixedDeltaMs: number): void {
-  void fixedDeltaMs;
-
-  const state = getSkiTrackState(engine);
-  if (!isGameplaySimulationActive(engine.gameStateRef.current)) {
-    resetSkiTrackState(state);
-    return;
-  }
-
-  const feet = resolvePlayerFeetWorldPosition(engine);
-  if (!feet) {
-    return;
-  }
-
+function sampleSkiTrack(
+  state: SkiTrackState,
+  feet: { worldX: number; worldY: number },
+  scrollOffsetY: number,
+  viewportHeight: number | null,
+): void {
   const sampleDistance = GAME_CONFIG.SKI_TRACK_SAMPLE_DISTANCE;
   const sampleDistanceSq = sampleDistance * sampleDistance;
 
@@ -150,9 +197,8 @@ export function tickSkiTrackSampling(engine: GameEngine, fixedDeltaMs: number): 
     const deltaX = feet.worldX - state.lastSampleWorldX;
     const deltaY = feet.worldY - state.lastSampleWorldY;
     if (deltaX * deltaX + deltaY * deltaY < sampleDistanceSq) {
-      const viewport = engine.viewportRef.current;
-      if (viewport) {
-        pruneTrackPointsBelowViewport(state, engine.worldRef.current.scrollOffsetY, viewport.height);
+      if (viewportHeight !== null) {
+        pruneTrackPointsBelowViewport(state, scrollOffsetY, viewportHeight);
       }
       return;
     }
@@ -163,9 +209,32 @@ export function tickSkiTrackSampling(engine: GameEngine, fixedDeltaMs: number): 
   state.lastSampleWorldY = feet.worldY;
   state.hasLastSample = true;
 
-  const viewport = engine.viewportRef.current;
-  if (viewport) {
-    pruneTrackPointsBelowViewport(state, engine.worldRef.current.scrollOffsetY, viewport.height);
+  if (viewportHeight !== null) {
+    pruneTrackPointsBelowViewport(state, scrollOffsetY, viewportHeight);
+  }
+}
+
+export function tickSkiTrackSampling(engine: GameEngine, fixedDeltaMs: number): void {
+  void fixedDeltaMs;
+
+  const bundle = getSkiTrackBundle(engine);
+  if (!isGameplaySimulationActive(engine.gameStateRef.current)) {
+    resetSkiTrackState(bundle.player);
+    resetSkiTrackState(bundle.chaser);
+    return;
+  }
+
+  const scrollOffsetY = engine.worldRef.current.scrollOffsetY;
+  const viewportHeight = engine.viewportRef.current?.height ?? null;
+
+  const playerFeet = resolvePlayerFeetWorldPosition(engine);
+  if (playerFeet) {
+    sampleSkiTrack(bundle.player, playerFeet, scrollOffsetY, viewportHeight);
+  }
+
+  const chaserFeet = resolveChaserFeetWorldPosition(engine);
+  if (chaserFeet) {
+    sampleSkiTrack(bundle.chaser, chaserFeet, scrollOffsetY, viewportHeight);
   }
 }
 
@@ -289,10 +358,9 @@ export function readSkiTrackSegmentLayout(
 }
 
 export function syncSkiTrackRendererFrame(engine: GameEngine, _viewport: ViewportSize): void {
-  const state = getSkiTrackState(engine);
-  rebuildSkiTrackSegmentLayouts(
-    state,
-    engine.worldRef.current.scrollOffsetY,
-    engine.cameraRef.current.offsetX,
-  );
+  const bundle = getSkiTrackBundle(engine);
+  const scrollOffsetY = engine.worldRef.current.scrollOffsetY;
+  const cameraOffsetX = engine.cameraRef.current.offsetX;
+  rebuildSkiTrackSegmentLayouts(bundle.player, scrollOffsetY, cameraOffsetX);
+  rebuildSkiTrackSegmentLayouts(bundle.chaser, scrollOffsetY, cameraOffsetX);
 }
