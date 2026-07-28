@@ -9,7 +9,7 @@ import { GAME_CONFIG } from '../utils/GameConfig';
 import { obstacleWorldToScreenRect } from '../utils/obstacle-render';
 
 /** One-shot: pause and draw collider rects when shield pickup overlaps small_rock. */
-export const SHIELD_ROCK_OVERLAP_DEBUG_ENABLED = true;
+export const SHIELD_ROCK_OVERLAP_DEBUG_ENABLED = false;
 
 type ColliderOverlay = {
   left: number;
@@ -120,7 +120,7 @@ export const ShieldRockOverlapDebug = memo(function ShieldRockOverlapDebug({
             '#EF4444',
           );
 
-          if (!renderOverlap(shieldRender, rockRender)) {
+          if (!renderOverlap(shieldColl, rockColl)) {
             continue;
           }
 

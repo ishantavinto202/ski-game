@@ -2,12 +2,12 @@ import { memo, useEffect, useMemo } from 'react';
 import { Image, StyleSheet, View } from 'react-native';
 import Animated, { useAnimatedStyle, useSharedValue, type SharedValue } from 'react-native-reanimated';
 
-import { speedBoostWorldToScreenRect } from '../entities/SpeedBoost';
 import type { ViewportSize } from '../engine/GameEngine';
 import { useGameEngineContext } from '../engine/GameEngineContext';
 import { SPEED_BOOST_WORLD_SIZE } from '../types/SpeedBoostTypes';
 import { GAME_CONFIG } from '../utils/GameConfig';
-import { getSpeedBoostRenderMargin, isSpeedBoostRectVisible } from '../utils/speed-boost-render';
+import { getSpeedBoostRenderMargin } from '../utils/speed-boost-render';
+import { worldYCenterToScreenY } from '../utils/world-coordinates';
 
 import speedBoostAtlasMetadata from '../../../../assets/assets/Thunder Animations/speed-boost-sprite.json';
 
@@ -126,23 +126,34 @@ const SpeedBoostRenderSlot = memo(function SpeedBoostRenderSlot({
     return engine.onFrame(() => {
       const speedBoost = engine.speedBoostRef.current.speedBoosts[slotIndex];
       if (!speedBoost.active) {
-        opacity.value = 0;
+        if (opacity.value !== 0) {
+          opacity.value = 0;
+        }
         return;
       }
 
       const scrollOffsetY = engine.worldRef.current.scrollOffsetY;
       const cameraOffsetX = engine.cameraRef.current.offsetX;
-      const rect = speedBoostWorldToScreenRect(speedBoost, scrollOffsetY, cameraOffsetX);
+      const rectLeft = speedBoost.worldX - speedBoost.width * 0.5 - cameraOffsetX;
+      const rectTop =
+        worldYCenterToScreenY(scrollOffsetY, speedBoost.worldY) - speedBoost.height * 0.5;
 
-      if (!isSpeedBoostRectVisible(rect, viewport, margin)) {
-        opacity.value = 0;
+      if (
+        rectLeft + speedBoost.width < -margin ||
+        rectLeft > viewport.width + margin ||
+        rectTop + speedBoost.height < -margin ||
+        rectTop > viewport.height + margin
+      ) {
+        if (opacity.value !== 0) {
+          opacity.value = 0;
+        }
         return;
       }
 
-      left.value = rect.left;
-      top.value = rect.top;
-      width.value = rect.width;
-      height.value = rect.height;
+      left.value = rectLeft;
+      top.value = rectTop;
+      width.value = speedBoost.width;
+      height.value = speedBoost.height;
       opacity.value = 1;
     });
   }, [engine, height, left, opacity, slotIndex, top, viewport, width]);

@@ -3,15 +3,16 @@ import { StyleSheet, View } from 'react-native';
 import Animated, { useAnimatedStyle, useSharedValue } from 'react-native-reanimated';
 
 import {
-  collisionBurstParticleToScreenRect,
+  COLLISION_BURST_OPACITY_MAX,
+  COLLISION_BURST_RENDER_MARGIN,
   getCollisionBurstPool,
   getCollisionBurstSlotIndices,
-  isCollisionBurstRectVisible,
   tickCollisionBurst,
 } from '../effects/CollisionBurst';
 import type { ViewportSize } from '../engine/GameEngine';
 import { useGameEngineContext } from '../engine/GameEngineContext';
 import { SKI_GAME_COLORS } from '../utils/colors';
+import { worldYCenterToScreenY } from '../utils/world-coordinates';
 
 const layerStyle = StyleSheet.create({
   root: {
@@ -48,24 +49,40 @@ const CollisionBurstSlot = memo(function CollisionBurstSlot({
       const pool = getCollisionBurstPool(engine);
       const particle = pool.particles[slotIndex];
       if (!particle.active) {
-        opacity.value = 0;
+        if (opacity.value !== 0) {
+          opacity.value = 0;
+        }
         return;
       }
 
       const scrollOffsetY = engine.worldRef.current.scrollOffsetY;
       const cameraOffsetX = engine.cameraRef.current.offsetX;
-      const rect = collisionBurstParticleToScreenRect(particle, scrollOffsetY, cameraOffsetX);
+      const lifeRatio =
+        particle.totalLifeMs > 0 ? particle.remainingLifeMs / particle.totalLifeMs : 0;
+      const clampedLife = lifeRatio < 0 ? 0 : lifeRatio > 1 ? 1 : lifeRatio;
+      const diameter = particle.size * (0.45 + 0.55 * clampedLife);
+      const rectLeft = particle.worldX - cameraOffsetX - diameter * 0.5;
+      const rectTop =
+        worldYCenterToScreenY(scrollOffsetY, particle.worldY) - diameter * 0.5;
+      const margin = COLLISION_BURST_RENDER_MARGIN;
 
-      if (!isCollisionBurstRectVisible(rect, viewport.width, viewport.height)) {
-        opacity.value = 0;
+      if (
+        rectLeft + diameter < -margin ||
+        rectLeft > viewport.width + margin ||
+        rectTop + diameter < -margin ||
+        rectTop > viewport.height + margin
+      ) {
+        if (opacity.value !== 0) {
+          opacity.value = 0;
+        }
         return;
       }
 
-      left.value = rect.left;
-      top.value = rect.top;
-      size.value = rect.size;
-      opacity.value = rect.opacity;
-      rotation.value = rect.rotation;
+      left.value = rectLeft;
+      top.value = rectTop;
+      size.value = diameter;
+      opacity.value = clampedLife * COLLISION_BURST_OPACITY_MAX;
+      rotation.value = particle.rotation;
     });
   }, [engine, left, opacity, rotation, size, slotIndex, top, viewport.height, viewport.width]);
 

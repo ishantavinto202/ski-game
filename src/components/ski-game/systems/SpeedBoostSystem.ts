@@ -4,7 +4,6 @@ import {
   createSpeedBoostPoolState,
   deactivateSpeedBoost,
   findInactiveSpeedBoostSlot,
-  speedBoostWorldToScreenRect,
   tickSpeedBoostDuration,
 } from '../entities/SpeedBoost';
 import type { GameEngine } from '../engine/GameEngine';
@@ -126,7 +125,9 @@ export class SpeedBoostSystem implements GameSystem {
         continue;
       }
 
-      const rect = speedBoostWorldToScreenRect(speedBoost, scrollOffsetY, cameraOffsetX);
+      const boostLeft = speedBoost.worldX - speedBoost.width * 0.5 - cameraOffsetX;
+      const boostTop =
+        worldYCenterToScreenY(scrollOffsetY, speedBoost.worldY) - speedBoost.height * 0.5;
 
       const hit = aabbIntersectsWithPadding(
         playerLeft,
@@ -134,10 +135,10 @@ export class SpeedBoostSystem implements GameSystem {
         playerWidth,
         playerHeight,
         PLAYER_COLLISION_PADDING,
-        rect.left,
-        rect.top,
-        rect.width,
-        rect.height,
+        boostLeft,
+        boostTop,
+        speedBoost.width,
+        speedBoost.height,
         SPEED_BOOST_COLLISION_PADDING,
       );
 

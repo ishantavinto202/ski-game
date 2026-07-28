@@ -32,6 +32,7 @@ export type {
 } from './GameStateTypes';
 export {
   createInitialGameStateRefState,
+  createReadyGameStateRefState,
   GAME_STATE_SYSTEM_ID,
 } from './GameStateTypes';
 export type { CoinRecord, CoinPoolState } from './CoinTypes';

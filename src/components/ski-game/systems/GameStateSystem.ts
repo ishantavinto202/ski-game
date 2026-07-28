@@ -1,4 +1,4 @@
-import { applyPendingGameTransition, createInitialGameState } from '../entities/GameState';
+import { applyPendingGameTransition, createInitialGameState, createReadyGameState } from '../entities/GameState';
 import type { GameEngine } from '../engine/GameEngine';
 import { GAME_STATE_SYSTEM_ID } from '../types/GameStateTypes';
 import type { GameSystem } from '../types';
@@ -12,7 +12,8 @@ export class GameStateSystem implements GameSystem {
 
   mount(engine: GameEngine): void {
     this.engine = engine;
-    engine.gameStateRef.current = createInitialGameState();
+    // Gameplay session begins at `ready` so `requestStartGame` can transition to `playing`.
+    engine.gameStateRef.current = createReadyGameState();
   }
 
   unmount(): void {

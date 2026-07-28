@@ -1,6 +1,7 @@
 import type { ObstacleRecord } from '../types/ObstacleTypes';
 import { resolvePrecomputedObstacleCollisionLayout } from './obstacle-assets';
-import { obstacleWorldToScreenRect, type ObstacleScreenRect } from './obstacle-render';
+import type { ObstacleScreenRect } from './obstacle-render';
+import { worldYCenterToScreenY } from './world-coordinates';
 
 const collisionScreenScratch: ObstacleScreenRect = {
   left: 0,
@@ -18,22 +19,24 @@ export function getObstacleCollisionScreenRect(
   scrollOffsetY: number,
   cameraOffsetX: number,
 ): ObstacleScreenRect {
-  const gameplayRect = obstacleWorldToScreenRect(obstacle, scrollOffsetY, cameraOffsetX);
+  const gameplayLeft = obstacle.worldX - obstacle.width * 0.5 - cameraOffsetX;
+  const gameplayTop =
+    worldYCenterToScreenY(scrollOffsetY, obstacle.worldY) - obstacle.height * 0.5;
   const layout = resolvePrecomputedObstacleCollisionLayout(
     obstacle.variant,
     obstacle.treeVisualVariant,
   );
 
   if (!layout) {
-    collisionScreenScratch.left = gameplayRect.left;
-    collisionScreenScratch.top = gameplayRect.top;
-    collisionScreenScratch.width = gameplayRect.width;
-    collisionScreenScratch.height = gameplayRect.height;
+    collisionScreenScratch.left = gameplayLeft;
+    collisionScreenScratch.top = gameplayTop;
+    collisionScreenScratch.width = obstacle.width;
+    collisionScreenScratch.height = obstacle.height;
     return collisionScreenScratch;
   }
 
-  collisionScreenScratch.left = gameplayRect.left + layout.offsetX;
-  collisionScreenScratch.top = gameplayRect.top + layout.offsetY;
+  collisionScreenScratch.left = gameplayLeft + layout.offsetX;
+  collisionScreenScratch.top = gameplayTop + layout.offsetY;
   collisionScreenScratch.width = layout.width;
   collisionScreenScratch.height = layout.height;
   return collisionScreenScratch;

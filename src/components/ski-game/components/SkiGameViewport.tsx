@@ -35,7 +35,14 @@ const viewportStyle = StyleSheet.create({
   },
 });
 
-export const SkiGameViewport = memo(function SkiGameViewport() {
+type SkiGameViewportProps = {
+  /** Pause Quit → Main Menu (owned by SkiGameRoot). */
+  onQuitToMenu?: () => void;
+};
+
+export const SkiGameViewport = memo(function SkiGameViewport({
+  onQuitToMenu,
+}: SkiGameViewportProps) {
   const engine = useGameEngineContext();
   useRegisterCoreSystems(engine);
 
@@ -65,7 +72,7 @@ export const SkiGameViewport = memo(function SkiGameViewport() {
       <Hud />
       <TouchControls />
       <PauseButton />
-      <PauseOverlay />
+      <PauseOverlay onQuitPress={onQuitToMenu} />
       <GameOverOverlay />
     </View>
   );

@@ -209,7 +209,7 @@ src/components/ski-game/
 ## Runtime composition
 
 1. **SkiGameScreen** — Full-screen **SkiGameRoot** (`flex: 1`, snow background); gameplay viewport is not inset — safe areas apply to HUD / pause / overlays only.
-2. **SkiGameRoot** — Creates a **GameEngine** via `useGameEngine`, wraps the tree in **GameEngineProvider**, mounts **SkiGameViewport** for layout and gameplay layers, and renders optional `children`. On first mount, if `gameStateRef.currentState === 'ready'`, calls `requestStartGame(engine)` once (does not run for `paused` or `game_over`; **Play Again** still uses `playAgain(engine)` after `resetGame`).
+2. **SkiGameRoot** — Creates a **GameEngine** via `useGameEngine`. Cold launch shows **MainMenu** (`SNOW DASH` / Play / Quit) over **SkiGameBackground** — **SkiGameViewport** is not mounted. **PLAY GAME** switches to the gameplay session (provider + **SkiGameViewport**); when systems mount at `ready`, Root requests `requestStartGame` once. **QUIT GAME** is a placeholder no-op. **Pause → Quit** calls `resetGame` then returns to Main Menu (`phase = menu`, unmounts viewport). Optional `children` still render. **Play Again** still uses `playAgain(engine)` after `resetGame` (does not return to the menu).
 3. **SkiGameViewport** — Registers core systems (through **SpawnManager**), starts **GameLoop** after layout, and mounts renderers, **Hud**, **TouchControls**, and pause UI. Layout and spawn use one-time React updates only.
 4. **GameManager** — Owns the active engine instance for the current session (`createEngine` / `destroyEngine`).
 5. **GameEngine** — Holds mutable **refs** (including `spawnRef`, `obstacleRef`), `inputActionsRef`, `runFixedUpdate`, frame listeners, viewport notifications, and **GameSystem** registration.
@@ -218,17 +218,18 @@ src/components/ski-game/
 
 ## Game state
 
-High-level flow on `engine.gameStateRef` — pause UI in **Pause** section; game over / restart / menu not implemented.
+High-level flow on `engine.gameStateRef` — main menu + pause UI; game over / restart covered in later sections.
 
 | File | Role |
 |------|------|
 | `types/GameStateTypes.ts` | `GameFlowState`, `GameStateRefState`, `PendingGameTransition` |
 | `entities/GameState.ts` | Transition requests, `applyPendingGameTransition`, `isGameplaySimulationActive` |
 | `systems/GameStateSystem.ts` | Sole owner of `currentState` / `previousState` updates |
+| `ui/MainMenu.tsx` | Cold-launch menu — `assets/TYPOGRAPHY.png` logo + filled Play / outlined Quit |
 
 **Ref fields:** `currentState`, `previousState`, `pendingTransition`.
 
-**States:** `ready`, `playing`, `paused`, `game_over` (initial: `ready`).
+**States:** `menu`, `ready`, `playing`, `paused`, `game_over` (cold initial: `menu`).
 
 **Request API (sets `pendingTransition` only — never mutates `currentState` directly):**
 
@@ -241,7 +242,8 @@ High-level flow on `engine.gameStateRef` — pause UI in **Pause** section; game
 
 ```mermaid
 stateDiagram-v2
-  [*] --> ready
+  [*] --> menu
+  menu --> ready: gameplay systems mount / resetGame
   ready --> playing: start
   playing --> paused: pause
   paused --> playing: resume
@@ -250,7 +252,7 @@ stateDiagram-v2
 
 **Transition ownership:** Only **GameStateSystem** applies transitions via `applyPendingGameTransition` during its `fixedUpdate`. Gameplay systems must not assign `currentState`; they call the request helpers when needed (**GameOverSystem** → `requestGameOver` when health reaches 0 while `playing`).
 
-**Initial boot:** **SkiGameRoot** `useEffect` requests `ready → playing` on session start. **GameStateSystem** applies the transition on the next **GameLoop** tick; gameplay fixed steps then run as usual. Boot logic lives only in **SkiGameRoot** (not **GameLoop**, **useGameViewport**, or **useGameLoop**). **GameLoop** starts only when `isSimulationReady` (`viewport !== null && playerSnapshot !== null`) so simulation never runs before the measured viewport and player spawn exist. **ChaserRenderer** / **PlayerRenderer** mount only after `playerSnapshot` is set; shared values start at `opacity = 0` and become visible only after the first valid engine sync.
+**Initial boot:** Engine cold-starts at `menu`. **SkiGameRoot** shows **MainMenu** without mounting **SkiGameViewport** (no GameLoop / gameplay renderers). **PLAY GAME** mounts the viewport; **GameStateSystem.mount** enters `ready`, then Root requests `ready → playing`. **resetGame** / Play Again restore `ready` (not `menu`) via `createReadyGameStateRefState`. **GameLoop** starts only when `isSimulationReady` (`viewport !== null && playerSnapshot !== null`) so simulation never runs before the measured viewport and player spawn exist — and never while the main menu is showing. **ChaserRenderer** / **PlayerRenderer** mount only after `playerSnapshot` is set; shared values start at `opacity = 0` and become visible only after the first valid engine sync.
 
 **Update flow (each animation frame):**
 
@@ -519,6 +521,9 @@ World-space spawn **requests** only — no entities, rendering, or collision. St
 | `SPAWN_VALIDATION_PATTERN_MAX_RETRIES` | `3` | Upstream origin bumps when a pattern footprint is occupied |
 | `OBSTACLE_PASSAGE_SAFETY_MARGIN` | `14` | Added to player collision width for minimum horizontal passable gap between footprints |
 | `OBSTACLE_VERTICAL_SAFETY_MARGIN` | `12` | Added to player collision height for minimum vertical passable gap between footprints |
+| `OBSTACLE_EDGE_OPEN_GROUP_LIMIT_EARLY` / `MID` / `LATE` | `3` / `2` / `1` | Consecutive groups an edge corridor may stay unpressured before a staggered edge-pressure formation |
+| `EDGE_PRESSURE_MIN_INWARD_CLEARANCE` | `58` | Min inward player-center displacement (px) required for an accepted edge-pressure formation |
+| `EDGE_PRESSURE_MIN_COOLDOWN_GROUPS` | `2` | Groups after pressure before another forced formation (critical overdue can bypass) |
 | `MAX_OBSTACLE_PLACEMENT_ATTEMPTS` | `4` | Deterministic lane/X corrections per pattern obstacle before skip |
 | `DEBUG_OBSTACLE_SPACING` | `false` | Log rejected/repositioned obstacle spawn candidates (dev only) |
 | `SPAWN_VALIDATION_PICKUP_MAX_SEARCH_ATTEMPTS` | `288` | Hard cap on occupancy probes per pickup placement search |
@@ -543,10 +548,10 @@ Every fixed step while lanes are valid, **SpawnManager** extends the mountain **
 
 1. **`nextPatternOriginY`** on `spawnRef` is the next upstream pattern origin (initialized at `scrollOffsetY + SPAWN_LOOKAHEAD_DISTANCE` on first run / reset).
 2. **Lookahead frontier** = `scrollOffsetY + POPULATION_LOOKAHEAD`.
-3. While `nextPatternOriginY < frontier`, pick a weighted **SpawnPattern** (up to **`MAX_PATTERN_SELECTION_ATTEMPTS` (5)** fresh weighted picks if placement fails — not the same pattern retried), a random center lane (left / center / right buckets), and expand at **`nextPatternOriginY`** (bumped upward if needed so the next pattern’s vertical range does not overlap the previous pattern’s range).
+3. While `nextPatternOriginY < frontier`, pick a weighted **SpawnPattern** (up to **`MAX_PATTERN_SELECTION_ATTEMPTS` (5)** fresh weighted picks if placement fails — not the same pattern retried), map one of five conceptual horizontal bands (left edge / left / center / right / right edge) onto the live lane layout, and expand at **`nextPatternOriginY`** (bumped upward if needed so the next pattern’s vertical range does not overlap the previous pattern’s range).
 4. Advance the cursor by **pattern depth** (max `forwardOffset` in that pattern, computed at runtime) plus a random gap in `PATTERN_VERTICAL_SPACING_MIN` … `MAX`.
 5. Cap patterns per tick so a single step cannot exhaust the buffer; resume on the next tick if the pending queue is full.
-6. Every fourth pattern is forced to **`single_rock`** centered on the middle lane so at least one navigable route remains.
+6. Every fourth pattern is forced to **`single_rock`** in a randomly selected horizontal band. Successful groups update bounded `leftEdgeOpenGroups` / `rightEdgeOpenGroups` from whether the accepted formation meaningfully interrupts that edge corridor (not mere outer-lane overlap). Once an edge reaches its difficulty-scaled open limit (early `3`, mid `2`, late `1`), the next eligible group places a staggered **edge-pressure formation** (early: tree + rock; mid: tree + boulder; late: tree + boulder + stump) anchored on that outer lane. Acceptance requires ≥ `EDGE_PRESSURE_MIN_INWARD_CLEARANCE` inward displacement and an interior escape band. `edgePressureCooldownRemaining` / `lastEdgePressureSide` prevent back-to-back pressure spam (and prefer alternating sides when both edges are due). Never reads player X. Reset clears counters, cooldown, and last side.
 
 **Spawn validation:** Before any pattern or pickup is queued, **`spawn-validation.ts`** builds a **`SpawnFootprint`** (lanes + world X/Y from existing geometry — pattern entries use **`OBSTACLE_VARIANT_DIMENSIONS`**, not duplicated metadata). **Obstacle patterns:** **`findClearPatternOriginY`** accepts an origin only when **`isSpawnAreaOccupied`** is false (active **`obstacleRef`** slots and pending **`obstacle`** **SpawnRequest** rows) **and** **`isPickupAreaOccupied`** is false (active coin/shield/speed-boost pools plus pending pickup **SpawnRequest** rows, raw footprints — no shield clearance inset). Patterns use validation Y-step retries inside **`findClearPatternOriginY`**; if a pattern still does not fit, **`spawn-population.ts`** discards only that pick and tries another weighted pattern (selection retries). If nothing fits after selection attempts, **`nextPatternOriginY`** advances upstream. **Per-obstacle spacing:** After an origin is chosen, **`enqueueSpawnPatternRequests`** validates each **`PatternObstacle`** with **`utils/obstacle-spacing.ts`** before writing a **SpawnRequest**. Validation uses **`OBSTACLE_VARIANT_DIMENSIONS`** gameplay footprints (not PNG canvas sizes). Minimum passable gaps are derived from the player collision body: horizontal gap ≥ **`PLAYER_WIDTH − 2×PLAYER_COLLISION_PADDING + OBSTACLE_PASSAGE_SAFETY_MARGIN`** (default **50 px**); vertical gap ≥ **`PLAYER_HEIGHT − 2×PLAYER_COLLISION_PADDING + OBSTACLE_VERTICAL_SAFETY_MARGIN`** (default **68 px**) when footprints share horizontal overlap. Each candidate is checked against active **`obstacleRef`** slots (Y-band cull), pending obstacle **SpawnRequest** rows, and obstacles already accepted in the same pattern expansion. Up to **`MAX_OBSTACLE_PLACEMENT_ATTEMPTS`** deterministic lane shifts (original, ±1 lane, ±2 lane) are tried before that individual obstacle is skipped — the pattern is not cancelled. Set **`DEBUG_OBSTACLE_SPACING`** to log rejections/repositions. **Pickups:** **`findClearPickupSpawn`** scans every lane at the base lookahead Y, then repeats for each upstream Y band (`SPAWN_PICKUP_WORLD_Y_SEARCH_BANDS` × `SPAWN_PICKUP_WORLD_Y_RETRY_STEP`), stopping at the first clear footprint or **`SPAWN_VALIDATION_PICKUP_MAX_SEARCH_ATTEMPTS`** probes (still obstacle-safe, lane-bound, never behind the player). Decorative edge trees skip a slot if occupied (no retries). No allocations in **`fixedUpdate`**.
 
@@ -558,7 +563,7 @@ Every fixed step while lanes are valid, **SpawnManager** extends the mountain **
 
 ### Spawn patterns (data-only library)
 
-Handcrafted **`SpawnPattern`** objects in **`SPAWN_PATTERN_LIBRARY`** (28 patterns) — the only obstacle layout content. Each pattern has **`id`**, **`weight`**, **`difficulty`** (`easy` | `medium` | `hard`), and **`obstacles`** (`variant`, `laneOffset`, `forwardOffset`). Depth-led weaves, gates, S-turns, and chicanes; no full-width walls. **`single_rock`** remains index `0` for periodic safe gaps.
+Handcrafted **`SpawnPattern`** objects in **`SPAWN_PATTERN_LIBRARY`** (28 patterns) — the only obstacle layout content. Each pattern has **`id`**, **`weight`**, **`difficulty`** (`easy` | `medium` | `hard`), and **`obstacles`** (`variant`, `laneOffset`, `forwardOffset`). Depth-led weaves, gates, S-turns, and chicanes; no full-width walls. **`single_rock`** remains index `0` for periodic safe gaps. Edge pressure uses dedicated staggered formations in **`spawn-population.ts`**. `scripts/verify-edge-safe-lanes.ts` runs 750 deterministic groups at levels 1/5/10 and checks corridor interruption, inward clearance, escape bands, stagger, cooldown spacing, both-side participation, and reset.
 
 Grouped exports for future weighting (unused by spawn pick today): **`SPAWN_PATTERNS_EASY`**, **`SPAWN_PATTERNS_MEDIUM`**, **`SPAWN_PATTERNS_HARD`**, **`SPAWN_PATTERN_DIFFICULTY_WEIGHT_TOTAL`**.
 
@@ -1265,7 +1270,7 @@ The root route `app/index.tsx` renders **SkiGameScreen** fullscreen (Stack root,
 
 ## Performance conventions
 
-- **SkiGameScreen**, **SkiGameRoot**, **SkiGameViewport**, **SkiGameBackground**, **PlayerRenderer**, **SkiTrackRenderer**, **SnowSurfaceRenderer**, **CollisionBurstRenderer**, **ShieldShatterRenderer**, **ShieldPickupRenderer**, **ShieldBubbleRenderer**, **ObstacleRenderer**, **CoinRenderer**, **SpeedBoostRenderer**, **WorldRenderer**, **Hud**, and **TouchControls** are wrapped in `React.memo`.
+- **SkiGameScreen**, **SkiGameRoot**, **SkiGameViewport**, **SkiGameBackground**, **MainMenu**, **PlayerRenderer**, **SkiTrackRenderer**, **SnowSurfaceRenderer**, **CollisionBurstRenderer**, **ShieldShatterRenderer**, **ShieldPickupRenderer**, **ShieldBubbleRenderer**, **ObstacleRenderer**, **CoinRenderer**, **SpeedBoostRenderer**, **WorldRenderer**, **Hud**, and **TouchControls** are wrapped in `React.memo`.
 - Input: **`engine.inputRef`** only — **TouchControls** uses stable `useCallback` handlers; no input `useState`.
 - Simulation: no per-frame `useState`; **WorldRenderer** uses Reanimated `useSharedValue` updated from `engine.onFrame`.
 - Styles use `StyleSheet.create` for stable references.

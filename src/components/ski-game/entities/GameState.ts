@@ -3,6 +3,7 @@ import type { EngineRef } from '../types/engine-ref';
 
 import {
   createInitialGameStateRefState,
+  createReadyGameStateRefState,
   type GameFlowState,
   type GameStateRefState,
   type PendingGameTransition,
@@ -10,6 +11,10 @@ import {
 
 export function createInitialGameState(): GameStateRefState {
   return createInitialGameStateRefState();
+}
+
+export function createReadyGameState(): GameStateRefState {
+  return createReadyGameStateRefState();
 }
 
 function requestTransition(

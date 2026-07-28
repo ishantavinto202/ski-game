@@ -5,7 +5,6 @@ import {
   createShieldPoolState,
   deactivateShield,
   findInactiveShieldSlot,
-  shieldWorldToScreenRect,
   tickShieldDuration,
 } from '../entities/Shield';
 import type { GameEngine } from '../engine/GameEngine';
@@ -162,7 +161,9 @@ export class ShieldSystem implements GameSystem {
         continue;
       }
 
-      const rect = shieldWorldToScreenRect(shield, scrollOffsetY, cameraOffsetX);
+      const shieldLeft = shield.worldX - shield.width * 0.5 - cameraOffsetX;
+      const shieldTop =
+        worldYCenterToScreenY(scrollOffsetY, shield.worldY) - shield.height * 0.5;
 
       const hit = aabbIntersectsWithPadding(
         playerLeft,
@@ -170,10 +171,10 @@ export class ShieldSystem implements GameSystem {
         playerWidth,
         playerHeight,
         PLAYER_COLLISION_PADDING,
-        rect.left,
-        rect.top,
-        rect.width,
-        rect.height,
+        shieldLeft,
+        shieldTop,
+        shield.width,
+        shield.height,
         SHIELD_COLLISION_PADDING,
       );
 

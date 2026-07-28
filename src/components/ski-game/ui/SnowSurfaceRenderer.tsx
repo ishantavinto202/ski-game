@@ -6,7 +6,6 @@ import Animated, {
   type SharedValue,
 } from 'react-native-reanimated';
 
-import { snowSurfaceWorldToScreenRect } from '../entities/SnowSurface';
 import type { ViewportSize } from '../engine/GameEngine';
 import { useGameEngineContext } from '../engine/GameEngineContext';
 import { GAME_CONFIG } from '../utils/GameConfig';
@@ -14,6 +13,7 @@ import {
   SNOW_SURFACE_ASSET_COUNT,
   SNOW_SURFACE_ASSETS,
 } from '../utils/snow-surface-assets';
+import { worldYCenterToScreenY } from '../utils/world-coordinates';
 
 const AnimatedImage = Animated.createAnimatedComponent(Image);
 
@@ -101,28 +101,34 @@ const SnowSurfaceRenderSlot = memo(function SnowSurfaceRenderSlot({
     return engine.onFrame(() => {
       const detail = engine.snowSurfaceRef.current.details[slotIndex];
       if (!detail.active) {
-        opacity.value = 0;
+        if (opacity.value !== 0) {
+          opacity.value = 0;
+        }
         return;
       }
 
       const scrollOffsetY = engine.worldRef.current.scrollOffsetY;
       const cameraOffsetX = engine.cameraRef.current.offsetX;
-      const rect = snowSurfaceWorldToScreenRect(detail, scrollOffsetY, cameraOffsetX);
+      const rectLeft = detail.worldX - detail.width * 0.5 - cameraOffsetX;
+      const rectTop =
+        worldYCenterToScreenY(scrollOffsetY, detail.worldY) - detail.height * 0.5;
 
       if (
-        rect.left + rect.width < -margin ||
-        rect.left > viewport.width + margin ||
-        rect.top + rect.height < -margin ||
-        rect.top > viewport.height + margin
+        rectLeft + detail.width < -margin ||
+        rectLeft > viewport.width + margin ||
+        rectTop + detail.height < -margin ||
+        rectTop > viewport.height + margin
       ) {
-        opacity.value = 0;
+        if (opacity.value !== 0) {
+          opacity.value = 0;
+        }
         return;
       }
 
-      left.value = rect.left;
-      top.value = rect.top;
-      width.value = rect.width;
-      height.value = rect.height;
+      left.value = rectLeft;
+      top.value = rectTop;
+      width.value = detail.width;
+      height.value = detail.height;
       activeTypeIndex.value = detail.typeIndex;
       opacity.value = GAME_CONFIG.SNOW_SURFACE_OPACITY;
     });

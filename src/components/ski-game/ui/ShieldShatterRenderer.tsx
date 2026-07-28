@@ -5,13 +5,14 @@ import Animated, { useAnimatedStyle, useSharedValue } from 'react-native-reanima
 import {
   getShieldShatterPool,
   getShieldShatterSlotIndices,
-  isShieldShatterRectVisible,
-  shieldShatterParticleToScreenRect,
+  SHIELD_SHATTER_OPACITY_MAX,
+  SHIELD_SHATTER_RENDER_MARGIN,
   tickShieldShatter,
 } from '../effects/ShieldShatter';
 import type { ViewportSize } from '../engine/GameEngine';
 import { useGameEngineContext } from '../engine/GameEngineContext';
 import { SKI_GAME_COLORS } from '../utils/colors';
+import { worldYCenterToScreenY } from '../utils/world-coordinates';
 
 const layerStyle = StyleSheet.create({
   root: {
@@ -48,24 +49,40 @@ const ShieldShatterSlot = memo(function ShieldShatterSlot({
       const pool = getShieldShatterPool(engine);
       const particle = pool.particles[slotIndex];
       if (!particle.active) {
-        opacity.value = 0;
+        if (opacity.value !== 0) {
+          opacity.value = 0;
+        }
         return;
       }
 
       const scrollOffsetY = engine.worldRef.current.scrollOffsetY;
       const cameraOffsetX = engine.cameraRef.current.offsetX;
-      const rect = shieldShatterParticleToScreenRect(particle, scrollOffsetY, cameraOffsetX);
+      const lifeRatio =
+        particle.totalLifeMs > 0 ? particle.remainingLifeMs / particle.totalLifeMs : 0;
+      const clampedLife = lifeRatio < 0 ? 0 : lifeRatio > 1 ? 1 : lifeRatio;
+      const diameter = particle.size * (0.4 + 0.6 * clampedLife);
+      const rectLeft = particle.worldX - cameraOffsetX - diameter * 0.5;
+      const rectTop =
+        worldYCenterToScreenY(scrollOffsetY, particle.worldY) - diameter * 0.5;
+      const margin = SHIELD_SHATTER_RENDER_MARGIN;
 
-      if (!isShieldShatterRectVisible(rect, viewport.width, viewport.height)) {
-        opacity.value = 0;
+      if (
+        rectLeft + diameter < -margin ||
+        rectLeft > viewport.width + margin ||
+        rectTop + diameter < -margin ||
+        rectTop > viewport.height + margin
+      ) {
+        if (opacity.value !== 0) {
+          opacity.value = 0;
+        }
         return;
       }
 
-      left.value = rect.left;
-      top.value = rect.top;
-      size.value = rect.size;
-      opacity.value = rect.opacity;
-      rotation.value = rect.rotation;
+      left.value = rectLeft;
+      top.value = rectTop;
+      size.value = diameter;
+      opacity.value = clampedLife * SHIELD_SHATTER_OPACITY_MAX;
+      rotation.value = particle.rotation;
     });
   }, [engine, left, opacity, rotation, size, slotIndex, top, viewport.height, viewport.width]);
 

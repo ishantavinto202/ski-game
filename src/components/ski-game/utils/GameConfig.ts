@@ -84,6 +84,17 @@ export const GAME_CONFIG = {
   OBSTACLE_MIN_SAFE_LANE_WIDTH_RATIO: 0.2,
   /** Maximum obstacle pattern span as a fraction of live viewport width. */
   OBSTACLE_MAX_PATTERN_WIDTH_RATIO: 0.75,
+  /** Max consecutive groups allowed to leave one edge uncontested (early → late). */
+  OBSTACLE_EDGE_OPEN_GROUP_LIMIT_EARLY: 3,
+  OBSTACLE_EDGE_OPEN_GROUP_LIMIT_MID: 2,
+  OBSTACLE_EDGE_OPEN_GROUP_LIMIT_LATE: 1,
+  /**
+   * Minimum center displacement (px) an edge-pressure formation must require.
+   * ~65% of one reference lane; intentionally well above a 5–10 px edge wiggle.
+   */
+  EDGE_PRESSURE_MIN_INWARD_CLEARANCE: 58,
+  /** Groups that must pass after an edge-pressure formation before another can fire. */
+  EDGE_PRESSURE_MIN_COOLDOWN_GROUPS: 2,
 
   /** Milliseconds between spawn request emissions. */
   SPAWN_INTERVAL: 1200,

@@ -18,8 +18,8 @@ const SHATTER_SPEED_MAX = 240;
 
 const SHATTER_DAMPING_PER_SECOND = 3.6;
 const SHATTER_SPIN_DEG_PER_SECOND = 220;
-const SHATTER_OPACITY_MAX = 0.92;
-const SHATTER_RENDER_MARGIN = 48;
+export const SHIELD_SHATTER_OPACITY_MAX = 0.92;
+export const SHIELD_SHATTER_RENDER_MARGIN = 48;
 
 export type ShieldShatterParticle = {
   active: boolean;
@@ -233,7 +233,7 @@ export function shieldShatterParticleToScreenRect(
     left: centerScreenX - size * 0.5,
     top: centerScreenY - size * 0.5,
     size,
-    opacity: clampedLife * SHATTER_OPACITY_MAX,
+    opacity: clampedLife * SHIELD_SHATTER_OPACITY_MAX,
     rotation: particle.rotation,
   };
 }
@@ -245,7 +245,7 @@ export function isShieldShatterRectVisible(
 ): boolean {
   const right = rect.left + rect.size;
   const bottom = rect.top + rect.size;
-  const margin = SHATTER_RENDER_MARGIN;
+  const margin = SHIELD_SHATTER_RENDER_MARGIN;
 
   if (right < -margin) {
     return false;

@@ -2,7 +2,7 @@ import type { SpawnPattern } from '../types/SpawnPatternTypes';
 import type { SpawnFootprint } from './spawn-validation';
 
 /** Temporary cabin pipeline instrumentation — remove after debugging. */
-export const CABIN_DEBUG_ENABLED = true;
+export const CABIN_DEBUG_ENABLED = false;
 
 export type CabinDebugCounts = {
   patternsSelected: number;

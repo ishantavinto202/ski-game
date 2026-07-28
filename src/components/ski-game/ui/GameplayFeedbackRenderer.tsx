@@ -7,7 +7,7 @@ import {
   formatGameplayFeedbackScoreLine,
   getGameplayFeedbackPool,
   getGameplayFeedbackSlotIndices,
-  resolveGameplayFeedbackPresentation,
+  GAMEPLAY_FEEDBACK_RISE_PX,
   tickGameplayFeedback,
 } from '../effects/GameplayFeedback';
 import type { ViewportSize } from '../engine/GameEngine';
@@ -75,20 +75,22 @@ const GameplayFeedbackSlot = memo(function GameplayFeedbackSlot({
     return engine.onFrame(() => {
       const pool = getGameplayFeedbackPool(engine);
       const entry = pool.entries[slotIndex];
-      const presentation = resolveGameplayFeedbackPresentation(entry);
 
-      if (!presentation) {
-        opacity.value = 0;
+      if (!entry.active || entry.totalLifeMs <= 0) {
+        if (opacity.value !== 0) {
+          opacity.value = 0;
+        }
         return;
       }
 
-      left.value = presentation.screenX;
-      top.value = presentation.screenY - presentation.riseOffsetY;
-      opacity.value = presentation.opacity;
-      scoreDelta.value = presentation.scoreDelta;
-      healthDamage.value = presentation.healthDamage;
-      scoreLineText.value = formatGameplayFeedbackScoreLine(presentation.scoreDelta);
-      healthLineText.value = formatGameplayFeedbackHealthLine(presentation.healthDamage);
+      const progress = entry.elapsedMs / entry.totalLifeMs;
+      left.value = entry.screenX;
+      top.value = entry.screenY - GAMEPLAY_FEEDBACK_RISE_PX * progress;
+      opacity.value = progress >= 1 ? 0 : 1 - progress;
+      scoreDelta.value = entry.scoreDelta;
+      healthDamage.value = entry.healthDamage;
+      scoreLineText.value = formatGameplayFeedbackScoreLine(entry.scoreDelta);
+      healthLineText.value = formatGameplayFeedbackHealthLine(entry.healthDamage);
     });
   }, [
     engine,

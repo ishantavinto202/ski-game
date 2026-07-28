@@ -10,7 +10,7 @@ import { createInitialCameraState } from '../types/camera-state';
 import { createInitialMovementState } from '../types/movement-state';
 import { createInitialPlayerFeelState } from '../types/player-feel-state';
 import { createInitialDifficultyState } from '../types/DifficultyTypes';
-import { createInitialGameStateRefState } from '../types/GameStateTypes';
+import { createReadyGameStateRefState } from '../types/GameStateTypes';
 import type { CoinPoolState, CoinRecord } from '../types/CoinTypes';
 import type { ObstaclePoolState, ObstacleRecord } from '../types/ObstacleTypes';
 import type { ShieldPoolState, ShieldRecord } from '../types/ShieldTypes';
@@ -31,7 +31,7 @@ import { resetChaserPathState, resolvePlayerWorldY } from './ChaserPath';
 import { clearGameOverCacheState } from '../ui/GameOverTypes';
 
 function resetGameStateRef(engine: GameEngine): void {
-  const next = createInitialGameStateRefState();
+  const next = createReadyGameStateRefState();
   const state = engine.gameStateRef.current;
   state.currentState = next.currentState;
   state.previousState = next.previousState;

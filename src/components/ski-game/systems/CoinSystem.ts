@@ -1,6 +1,5 @@
 import {
   activateCoinFromSpawn,
-  coinWorldToScreenRect,
   collectCoin,
   createCoinPoolState,
   deactivateCoin,
@@ -161,7 +160,8 @@ export class CoinSystem implements GameSystem {
         continue;
       }
 
-      const rect = coinWorldToScreenRect(coin, scrollOffsetY, cameraOffsetX);
+      const coinLeft = coin.worldX - coin.width * 0.5 - cameraOffsetX;
+      const coinTop = worldYCenterToScreenY(scrollOffsetY, coin.worldY) - coin.height * 0.5;
 
       const hit = aabbIntersectsWithPadding(
         playerLeft,
@@ -169,10 +169,10 @@ export class CoinSystem implements GameSystem {
         playerWidth,
         playerHeight,
         PLAYER_COLLISION_PADDING,
-        rect.left,
-        rect.top,
-        rect.width,
-        rect.height,
+        coinLeft,
+        coinTop,
+        coin.width,
+        coin.height,
         COIN_COLLISION_PADDING,
       );
 

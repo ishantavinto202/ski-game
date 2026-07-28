@@ -2,12 +2,12 @@ import { memo, useEffect, useMemo } from 'react';
 import { Image, StyleSheet, View } from 'react-native';
 import Animated, { useAnimatedStyle, useSharedValue, type SharedValue } from 'react-native-reanimated';
 
-import { coinWorldToScreenRect } from '../entities/Coin';
 import type { ViewportSize } from '../engine/GameEngine';
 import { useGameEngineContext } from '../engine/GameEngineContext';
 import { COIN_WORLD_SIZE } from '../types/CoinTypes';
-import { getCoinRenderMargin, isCoinRectVisible } from '../utils/coin-render';
+import { getCoinRenderMargin } from '../utils/coin-render';
 import { GAME_CONFIG } from '../utils/GameConfig';
+import { worldYCenterToScreenY } from '../utils/world-coordinates';
 
 import coinAtlasMetadata from '../../../../assets/assets/Coin Animations/texture.json';
 
@@ -118,22 +118,32 @@ const CoinRenderSlot = memo(function CoinRenderSlot({
     return engine.onFrame(() => {
       const coin = engine.coinRef.current.coins[slotIndex];
       if (!coin.active) {
-        opacity.value = 0;
+        if (opacity.value !== 0) {
+          opacity.value = 0;
+        }
         return;
       }
 
       const scrollOffsetY = engine.worldRef.current.scrollOffsetY;
       const cameraOffsetX = engine.cameraRef.current.offsetX;
-      const rect = coinWorldToScreenRect(coin, scrollOffsetY, cameraOffsetX);
+      const rectLeft = coin.worldX - coin.width * 0.5 - cameraOffsetX;
+      const rectTop = worldYCenterToScreenY(scrollOffsetY, coin.worldY) - coin.height * 0.5;
 
-      if (!isCoinRectVisible(rect, viewport, margin)) {
-        opacity.value = 0;
+      if (
+        rectLeft + coin.width < -margin ||
+        rectLeft > viewport.width + margin ||
+        rectTop + coin.height < -margin ||
+        rectTop > viewport.height + margin
+      ) {
+        if (opacity.value !== 0) {
+          opacity.value = 0;
+        }
         return;
       }
 
-      left.value = rect.left;
-      top.value = rect.top;
-      size.value = rect.width;
+      left.value = rectLeft;
+      top.value = rectTop;
+      size.value = coin.width;
       opacity.value = 1;
     });
   }, [engine, left, opacity, size, slotIndex, top, viewport]);

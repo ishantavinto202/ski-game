@@ -16,14 +16,11 @@ import {
   resolvePrecomputedObstacleCollisionLayout,
   resolvePrecomputedObstacleVisualLayout,
 } from '../utils/obstacle-assets';
-import {
-  getObstacleRenderMargin,
-  isObstacleRectVisible,
-  obstacleWorldToScreenRect,
-} from '../utils/obstacle-render';
+import { getObstacleRenderMargin } from '../utils/obstacle-render';
 import { OBSTACLE_VARIANT_PLACEHOLDER_COLORS, SKI_GAME_COLORS } from '../utils/colors';
 import { logCabinRenderedOnce } from '../utils/cabin-debug';
 import { GAME_CONFIG } from '../utils/GameConfig';
+import { worldYCenterToScreenY } from '../utils/world-coordinates';
 
 const AnimatedImage = Animated.createAnimatedComponent(Image);
 
@@ -128,33 +125,44 @@ const ObstacleRenderSlot = memo(function ObstacleRenderSlot({
     return engine.onFrame(() => {
       const obstacle = engine.obstacleRef.current.obstacles[slotIndex];
       if (!obstacle.active) {
-        opacity.value = 0;
-        usesAsset.value = 0;
-        activeAssetIndex.value = -1;
-        hitboxOpacity.value = 0;
+        if (opacity.value !== 0) {
+          opacity.value = 0;
+          usesAsset.value = 0;
+          activeAssetIndex.value = -1;
+          hitboxOpacity.value = 0;
+        }
         return;
       }
 
       const scrollOffsetY = engine.worldRef.current.scrollOffsetY;
       const cameraOffsetX = engine.cameraRef.current.offsetX;
-      const rect = obstacleWorldToScreenRect(obstacle, scrollOffsetY, cameraOffsetX);
+      const rectLeft = obstacle.worldX - obstacle.width * 0.5 - cameraOffsetX;
+      const rectTop =
+        worldYCenterToScreenY(scrollOffsetY, obstacle.worldY) - obstacle.height * 0.5;
 
-      if (!isObstacleRectVisible(rect, viewport, margin)) {
-        opacity.value = 0;
-        usesAsset.value = 0;
-        activeAssetIndex.value = -1;
-        hitboxOpacity.value = 0;
+      if (
+        rectLeft + obstacle.width < -margin ||
+        rectLeft > viewport.width + margin ||
+        rectTop + obstacle.height < -margin ||
+        rectTop > viewport.height + margin
+      ) {
+        if (opacity.value !== 0) {
+          opacity.value = 0;
+          usesAsset.value = 0;
+          activeAssetIndex.value = -1;
+          hitboxOpacity.value = 0;
+        }
         return;
       }
 
       if (obstacle.variant === 'cabin') {
-        logCabinRenderedOnce(obstacle.spawnRequestId, rect.left, rect.top);
+        logCabinRenderedOnce(obstacle.spawnRequestId, rectLeft, rectTop);
       }
 
-      left.value = rect.left;
-      top.value = rect.top;
-      width.value = rect.width;
-      height.value = rect.height;
+      left.value = rectLeft;
+      top.value = rectTop;
+      width.value = obstacle.width;
+      height.value = obstacle.height;
       variantIndex.value = OBSTACLE_VARIANT_RENDER_INDEX[obstacle.variant];
 
       const assetIndex = resolveObstacleRenderAssetIndex(
@@ -169,8 +177,8 @@ const ObstacleRenderSlot = memo(function ObstacleRenderSlot({
         if (layout) {
           activeAssetIndex.value = assetIndex;
           usesAsset.value = 1;
-          assetLeft.value = rect.left + layout.visualOffsetX;
-          assetTop.value = rect.top + layout.visualOffsetY;
+          assetLeft.value = rectLeft + layout.visualOffsetX;
+          assetTop.value = rectTop + layout.visualOffsetY;
           assetWidth.value = layout.renderWidth;
           assetHeight.value = layout.renderHeight;
         } else {
@@ -188,8 +196,8 @@ const ObstacleRenderSlot = memo(function ObstacleRenderSlot({
           obstacle.treeVisualVariant,
         );
         if (collisionLayout) {
-          hitboxLeft.value = rect.left + collisionLayout.offsetX;
-          hitboxTop.value = rect.top + collisionLayout.offsetY;
+          hitboxLeft.value = rectLeft + collisionLayout.offsetX;
+          hitboxTop.value = rectTop + collisionLayout.offsetY;
           hitboxWidth.value = collisionLayout.width;
           hitboxHeight.value = collisionLayout.height;
           hitboxOpacity.value = 1;

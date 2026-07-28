@@ -47,7 +47,9 @@ const EdgeTreeRenderSlot = memo(function EdgeTreeRenderSlot({ slotIndex, viewpor
     return engine.onFrame(() => {
       const tree = engine.decorativeTreeRef.current.trees[slotIndex];
       if (!tree.active) {
-        opacity.value = 0;
+        if (opacity.value !== 0) {
+          opacity.value = 0;
+        }
         return;
       }
 
@@ -63,7 +65,9 @@ const EdgeTreeRenderSlot = memo(function EdgeTreeRenderSlot({ slotIndex, viewpor
         rectTop + tree.height < -margin ||
         rectTop > viewport.height + margin
       ) {
-        opacity.value = 0;
+        if (opacity.value !== 0) {
+          opacity.value = 0;
+        }
         return;
       }
 

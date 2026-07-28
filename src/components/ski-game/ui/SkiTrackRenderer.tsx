@@ -97,7 +97,9 @@ const SkiTrackSegmentSlot = memo(function SkiTrackSegmentSlot({
     return engine.onFrame(() => {
       const state = resolveTrackState(engine, owner);
       if (segmentIndex >= state.activeSegmentCount) {
-        opacity.value = 0;
+        if (opacity.value !== 0) {
+          opacity.value = 0;
+        }
         return;
       }
 
@@ -122,7 +124,9 @@ const SkiTrackSegmentSlot = memo(function SkiTrackSegmentSlot({
         );
 
       if (!segmentVisible) {
-        opacity.value = 0;
+        if (opacity.value !== 0) {
+          opacity.value = 0;
+        }
         return;
       }
 

@@ -28,6 +28,13 @@ export type SpawnManagerState = {
   populationCursorInitialized: boolean;
   populationLastPatternPlaced: boolean;
   lastPatternOriginY: number;
+  /** Consecutive generated groups without meaningful left/right edge pressure. */
+  leftEdgeOpenGroups: number;
+  rightEdgeOpenGroups: number;
+  /** Remaining groups before another forced edge-pressure formation may fire. */
+  edgePressureCooldownRemaining: number;
+  /** Last forced pressure side: -1 left, 1 right, 0 none yet. */
+  lastEdgePressureSide: -1 | 0 | 1;
   laneCount: number;
   laneWidth: number;
   playableOriginX: number;
@@ -77,6 +84,10 @@ export function createInitialSpawnManagerState(): SpawnManagerState {
     populationCursorInitialized: false,
     populationLastPatternPlaced: false,
     lastPatternOriginY: 0,
+    leftEdgeOpenGroups: 0,
+    rightEdgeOpenGroups: 0,
+    edgePressureCooldownRemaining: 0,
+    lastEdgePressureSide: 0,
     laneCount: 3,
     laneWidth: 0,
     playableOriginX: 0,

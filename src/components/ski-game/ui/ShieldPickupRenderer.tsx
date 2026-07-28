@@ -2,12 +2,12 @@ import { memo, useEffect, useMemo } from 'react';
 import { Image, StyleSheet, View } from 'react-native';
 import Animated, { useAnimatedStyle, useSharedValue, type SharedValue } from 'react-native-reanimated';
 
-import { shieldWorldToScreenRect } from '../entities/Shield';
 import type { ViewportSize } from '../engine/GameEngine';
 import { useGameEngineContext } from '../engine/GameEngineContext';
 import { SHIELD_WORLD_SIZE } from '../types/ShieldTypes';
 import { GAME_CONFIG } from '../utils/GameConfig';
-import { getShieldRenderMargin, isShieldRectVisible } from '../utils/shield-render';
+import { getShieldRenderMargin } from '../utils/shield-render';
+import { worldYCenterToScreenY } from '../utils/world-coordinates';
 
 import shieldAtlasMetadata from '../../../../assets/assets/Shield Animations/shield-sprite.json';
 
@@ -125,23 +125,34 @@ const ShieldPickupRenderSlot = memo(function ShieldPickupRenderSlot({
     return engine.onFrame(() => {
       const shield = engine.shieldRef.current.shields[slotIndex];
       if (!shield.active) {
-        opacity.value = 0;
+        if (opacity.value !== 0) {
+          opacity.value = 0;
+        }
         return;
       }
 
       const scrollOffsetY = engine.worldRef.current.scrollOffsetY;
       const cameraOffsetX = engine.cameraRef.current.offsetX;
-      const rect = shieldWorldToScreenRect(shield, scrollOffsetY, cameraOffsetX);
+      const rectLeft = shield.worldX - shield.width * 0.5 - cameraOffsetX;
+      const rectTop =
+        worldYCenterToScreenY(scrollOffsetY, shield.worldY) - shield.height * 0.5;
 
-      if (!isShieldRectVisible(rect, viewport, margin)) {
-        opacity.value = 0;
+      if (
+        rectLeft + shield.width < -margin ||
+        rectLeft > viewport.width + margin ||
+        rectTop + shield.height < -margin ||
+        rectTop > viewport.height + margin
+      ) {
+        if (opacity.value !== 0) {
+          opacity.value = 0;
+        }
         return;
       }
 
-      left.value = rect.left;
-      top.value = rect.top;
-      width.value = rect.width;
-      height.value = rect.height;
+      left.value = rectLeft;
+      top.value = rectTop;
+      width.value = shield.width;
+      height.value = shield.height;
       opacity.value = 1;
     });
   }, [engine, height, left, opacity, slotIndex, top, viewport, width]);

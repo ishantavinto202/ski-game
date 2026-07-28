@@ -59,7 +59,9 @@ export const ChaserRenderer = memo(function ChaserRenderer() {
     const syncChaserVisual = (): void => {
       const player = engine.playerRef.current;
       if (!player) {
-        opacity.value = 0;
+        if (opacity.value !== 0) {
+          opacity.value = 0;
+        }
         return;
       }
 

@@ -17,8 +17,8 @@ const BURST_SPEED_MIN = 72;
 const BURST_SPEED_MAX = 196;
 
 const BURST_DAMPING_PER_SECOND = 4.2;
-const BURST_OPACITY_MAX = 0.88;
-const BURST_RENDER_MARGIN = 48;
+export const COLLISION_BURST_OPACITY_MAX = 0.88;
+export const COLLISION_BURST_RENDER_MARGIN = 48;
 
 export type CollisionBurstParticle = {
   active: boolean;
@@ -234,7 +234,7 @@ export function collisionBurstParticleToScreenRect(
     left: centerScreenX - size * 0.5,
     top: centerScreenY - size * 0.5,
     size,
-    opacity: clampedLife * BURST_OPACITY_MAX,
+    opacity: clampedLife * COLLISION_BURST_OPACITY_MAX,
     rotation: particle.rotation,
   };
 }
@@ -246,7 +246,7 @@ export function isCollisionBurstRectVisible(
 ): boolean {
   const right = rect.left + rect.size;
   const bottom = rect.top + rect.size;
-  const margin = BURST_RENDER_MARGIN;
+  const margin = COLLISION_BURST_RENDER_MARGIN;
 
   if (right < -margin) {
     return false;
