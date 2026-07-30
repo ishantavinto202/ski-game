@@ -1,7 +1,7 @@
 import type { GameEngine } from '../engine/GameEngine';
 import { createInitialCameraState } from '../types/camera-state';
 import type { GameSystem } from '../types';
-import { GAME_CONFIG } from '../utils/GameConfig';
+import { GAME_CONFIG, perfFeatureEnabled } from '../utils/GameConfig';
 
 export const CAMERA_SYSTEM_ID = 'camera-system';
 
@@ -27,6 +27,11 @@ export class CameraSystem implements GameSystem {
   fixedUpdate(fixedDeltaMs: number): void {
     const engine = this.engine;
     if (!engine) {
+      return;
+    }
+
+    if (!perfFeatureEnabled('CAMERA')) {
+      engine.cameraRef.current.offsetX = 0;
       return;
     }
 

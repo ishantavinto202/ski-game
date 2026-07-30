@@ -1,8 +1,19 @@
 import type { GameEngine } from './GameEngine';
 import { isGameplaySimulationActive } from '../entities/GameState';
+import {
+  isPerformanceProfilingEnabled,
+  profileGameLoopBegin,
+  profileGameLoopEnd,
+  profileRecordFrame,
+  setPerformanceProfilingEnabled,
+} from '../profiling/PerformanceProfiling';
 import { GAME_CONFIG } from '../utils/GameConfig';
 
-const MAX_FIXED_STEPS = 8;
+/**
+ * Bound catch-up work after a delayed frame. Four 60 Hz updates preserve short
+ * stalls without letting a single hitch trigger an eight-step CPU spike.
+ */
+const MAX_FIXED_STEPS = 4;
 
 export class GameLoop {
   private running = false;
@@ -15,6 +26,8 @@ export class GameLoop {
     if (this.running) {
       return;
     }
+
+    setPerformanceProfilingEnabled(Boolean(GAME_CONFIG.PERFORMANCE_PROFILING));
 
     this.running = true;
     this.lastTimestamp = performance.now();
@@ -42,24 +55,31 @@ export class GameLoop {
       return;
     }
 
-    const frameDeltaMs = timestamp - this.lastTimestamp;
+    const profiling = isPerformanceProfilingEnabled();
+    const loopStartedAt = profiling ? profileGameLoopBegin() : 0;
+
+    const frameDeltaMs = Math.max(0, timestamp - this.lastTimestamp);
     this.lastTimestamp = timestamp;
 
     const time = this.engine.timeRef.current;
-    time.fixedAccumulatorMs += frameDeltaMs;
-
     const fixedStepMs = GAME_CONFIG.FIXED_TIMESTEP;
     const simulationActive = isGameplaySimulationActive(this.engine.gameStateRef.current);
     let steps = 0;
 
     if (simulationActive) {
+      const maxCatchUpMs = fixedStepMs * MAX_FIXED_STEPS;
+      time.fixedAccumulatorMs = Math.min(
+        time.fixedAccumulatorMs + frameDeltaMs,
+        maxCatchUpMs,
+      );
+
       while (time.fixedAccumulatorMs >= fixedStepMs && steps < MAX_FIXED_STEPS) {
         this.engine.runFixedUpdate(fixedStepMs);
         time.fixedAccumulatorMs -= fixedStepMs;
         steps += 1;
       }
 
-      if (steps >= MAX_FIXED_STEPS) {
+      if (steps === MAX_FIXED_STEPS) {
         time.fixedAccumulatorMs = 0;
       }
     } else {
@@ -67,7 +87,21 @@ export class GameLoop {
       time.fixedAccumulatorMs = 0;
     }
 
-    this.engine.notifyFrame();
+    // Re-read after transitions so pause overlays update while world sync freezes.
+    const syncPlayingWorld = isGameplaySimulationActive(this.engine.gameStateRef.current);
+    this.engine.notifyFrame(syncPlayingWorld);
+
+    if (profiling) {
+      profileRecordFrame(
+        frameDeltaMs,
+        simulationActive,
+        syncPlayingWorld,
+        this.engine.getFrameListenerCount(),
+        this.engine.getPlayingFrameListenerCount(),
+      );
+      profileGameLoopEnd(loopStartedAt);
+    }
+
     this.scheduleFrame();
   };
 }

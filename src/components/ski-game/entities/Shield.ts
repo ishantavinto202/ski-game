@@ -1,4 +1,5 @@
 import { GAME_CONFIG } from '../utils/GameConfig';
+import { profilePickupSpawn } from '../profiling/PerformanceProfiling';
 import { worldYCenterToScreenY } from '../utils/world-coordinates';
 
 import {
@@ -71,6 +72,7 @@ export function activateShieldFromSpawn(
   slot.active = true;
 
   pool.activeCount += 1;
+  profilePickupSpawn();
 }
 
 export function deactivateShield(slot: ShieldRecord, pool: ShieldPoolState): void {

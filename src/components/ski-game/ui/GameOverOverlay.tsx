@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useMemo, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Pressable, StyleSheet, Text, TextInput, View, type TextStyle } from 'react-native';
 import Animated, {
   useAnimatedProps,
@@ -10,6 +10,7 @@ import Animated, {
 import { playAgain } from '../systems/RestartSystem';
 import { useGameEngineContext } from '../engine/GameEngineContext';
 import { SKI_GAME_COLORS } from '../utils/colors';
+import { writeSharedNumber } from '../utils/shared-value-write';
 
 import { GAME_FLOW_STATE_INDEX } from './PauseTypes';
 import {
@@ -101,6 +102,10 @@ const overlayStyles = StyleSheet.create({
     backgroundColor: 'rgba(241, 245, 249, 0.95)',
   },
 });
+const secondaryActionStyle = [
+  overlayStyles.action,
+  overlayStyles.secondaryAction,
+];
 
 type GameOverStatFieldProps = {
   sharedValue: SharedValue<number>;
@@ -121,13 +126,17 @@ const GameOverStatField = memo(function GameOverStatField({
       defaultValue: text,
     };
   });
+  const compositeStyle = useMemo(
+    () => [overlayStyles.statValue, style],
+    [style],
+  );
 
   return (
     <AnimatedTextInput
       editable={false}
       pointerEvents="none"
       underlineColorAndroid="transparent"
-      style={[overlayStyles.statValue, style]}
+      style={compositeStyle}
       animatedProps={animatedProps}
     />
   );
@@ -142,6 +151,7 @@ export const GameOverOverlay = memo(function GameOverOverlay({
   const currentScore = useSharedValue<number>(0);
   const totalDistance = useSharedValue<number>(0);
   const totalCoins = useSharedValue<number>(0);
+  const previousFlowStateIndexRef = useRef<number | null>(null);
 
   const rootStyle = useMemo(
     () => [overlayStyles.root, { zIndex: GAME_OVER_OVERLAY_Z_INDEX }],
@@ -150,16 +160,28 @@ export const GameOverOverlay = memo(function GameOverOverlay({
 
   useEffect(() => {
     const sync = () => {
-      flowStateIndex.value = GAME_FLOW_STATE_INDEX[engine.gameStateRef.current.currentState];
+      const nextFlowStateIndex =
+        GAME_FLOW_STATE_INDEX[engine.gameStateRef.current.currentState];
+      writeSharedNumber(flowStateIndex, nextFlowStateIndex);
+
+      if (
+        nextFlowStateIndex !== GAME_FLOW_GAME_OVER ||
+        previousFlowStateIndexRef.current === GAME_FLOW_GAME_OVER
+      ) {
+        previousFlowStateIndexRef.current = nextFlowStateIndex;
+        return;
+      }
+
       const summary = readGameOverSummaryFromRefs({
         scoreRef: engine.scoreRef,
         timeRef: engine.timeRef,
         coinRef: engine.coinRef,
         healthRef: engine.healthRef,
       });
-      currentScore.value = summary.currentScore;
-      totalDistance.value = summary.totalDistance;
-      totalCoins.value = summary.totalCoinsCollected;
+      writeSharedNumber(currentScore, summary.currentScore);
+      writeSharedNumber(totalDistance, summary.totalDistance);
+      writeSharedNumber(totalCoins, summary.totalCoinsCollected);
+      previousFlowStateIndexRef.current = nextFlowStateIndex;
     };
 
     sync();
@@ -169,6 +191,10 @@ export const GameOverOverlay = memo(function GameOverOverlay({
   const containerStyle = useAnimatedStyle(() => ({
     display: flowStateIndex.value === GAME_FLOW_GAME_OVER ? 'flex' : 'none',
   }));
+  const rootCompositeStyle = useMemo(
+    () => [rootStyle, containerStyle],
+    [containerStyle, rootStyle],
+  );
 
   const handlePlayAgainPress = useCallback(() => {
     if (onPlayAgainPress) {
@@ -191,7 +217,7 @@ export const GameOverOverlay = memo(function GameOverOverlay({
   }, []);
 
   return (
-    <Animated.View style={[rootStyle, containerStyle]} pointerEvents="auto">
+    <Animated.View style={rootCompositeStyle} pointerEvents="auto">
       <View style={overlayStyles.scrim} pointerEvents="none" />
       <View style={overlayStyles.panel}>
         <Text style={overlayStyles.title}>GAME OVER</Text>
@@ -221,7 +247,7 @@ export const GameOverOverlay = memo(function GameOverOverlay({
           <Pressable
             accessibilityRole="button"
             onPress={handleQuitPress}
-            style={[overlayStyles.action, overlayStyles.secondaryAction]}
+            style={secondaryActionStyle}
           >
             <Text style={overlayStyles.actionLabel}>Quit</Text>
           </Pressable>

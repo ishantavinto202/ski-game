@@ -1,10 +1,11 @@
-import { memo, useCallback, useEffect, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import Animated, { useAnimatedStyle, useSharedValue } from 'react-native-reanimated';
 
 import { requestResumeGame } from '../entities/GameState';
 import { useGameEngineContext } from '../engine/GameEngineContext';
 import { SKI_GAME_COLORS } from '../utils/colors';
+import { writeSharedNumber } from '../utils/shared-value-write';
 
 import {
   GAME_FLOW_STATE_INDEX,
@@ -73,16 +74,23 @@ const overlayStyles = StyleSheet.create({
     backgroundColor: 'rgba(241, 245, 249, 0.95)',
   },
 });
+const quitActionStyle = [overlayStyles.action, overlayStyles.quitAction];
 
 export const PauseOverlay = memo(function PauseOverlay({ onQuitPress = PAUSE_PLACEHOLDER_QUIT }: PauseOverlayProps) {
   const engine = useGameEngineContext();
   const flowStateIndex = useSharedValue(GAME_FLOW_STATE_INDEX.ready);
 
   useEffect(() => {
-    flowStateIndex.value = GAME_FLOW_STATE_INDEX[engine.gameStateRef.current.currentState];
+    writeSharedNumber(
+      flowStateIndex,
+      GAME_FLOW_STATE_INDEX[engine.gameStateRef.current.currentState],
+    );
 
     return engine.onFrame(() => {
-      flowStateIndex.value = GAME_FLOW_STATE_INDEX[engine.gameStateRef.current.currentState];
+      writeSharedNumber(
+        flowStateIndex,
+        GAME_FLOW_STATE_INDEX[engine.gameStateRef.current.currentState],
+      );
     });
   }, [engine, flowStateIndex]);
 
@@ -105,9 +113,13 @@ export const PauseOverlay = memo(function PauseOverlay({ onQuitPress = PAUSE_PLA
   const containerStyle = useAnimatedStyle(() => ({
     display: flowStateIndex.value === PAUSE_FLOW_PAUSED ? 'flex' : 'none',
   }));
+  const rootCompositeStyle = useMemo(
+    () => [overlayStyles.root, containerStyle],
+    [containerStyle],
+  );
 
   return (
-    <Animated.View style={[overlayStyles.root, containerStyle]} pointerEvents="auto">
+    <Animated.View style={rootCompositeStyle} pointerEvents="auto">
       <View style={overlayStyles.scrim} pointerEvents="none" />
       <View style={overlayStyles.panel}>
         <Text style={overlayStyles.title}>PAUSED</Text>
@@ -125,7 +137,7 @@ export const PauseOverlay = memo(function PauseOverlay({ onQuitPress = PAUSE_PLA
           <Pressable
             accessibilityRole="button"
             onPress={handleQuitPress}
-            style={[overlayStyles.action, overlayStyles.quitAction]}
+            style={quitActionStyle}
           >
             <Text style={overlayStyles.actionLabel}>Quit</Text>
           </Pressable>

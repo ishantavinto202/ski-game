@@ -1,13 +1,18 @@
-import { memo, useEffect, useMemo } from 'react';
-import { Image, StyleSheet, View } from 'react-native';
-import Animated, { useAnimatedStyle, useSharedValue, type SharedValue } from 'react-native-reanimated';
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Image, StyleSheet, type ViewStyle } from 'react-native';
+import Animated, {
+  makeMutable,
+  useAnimatedStyle,
+  useSharedValue,
+  type SharedValue,
+} from 'react-native-reanimated';
 
 import type { ViewportSize } from '../engine/GameEngine';
 import { useGameEngineContext } from '../engine/GameEngineContext';
 import { SHIELD_WORLD_SIZE } from '../types/ShieldTypes';
 import { GAME_CONFIG } from '../utils/GameConfig';
 import { getShieldRenderMargin } from '../utils/shield-render';
-import { worldYCenterToScreenY } from '../utils/world-coordinates';
+import { writeSharedNumber } from '../utils/shared-value-write';
 
 import shieldAtlasMetadata from '../../../../assets/assets/Shield Animations/shield-sprite.json';
 
@@ -16,6 +21,7 @@ const SHIELD_ATLAS_TEXTURE = require('../../../../assets/assets/Shield Animation
 /** ~12–15 FPS sprite loop; independent of the 60 FPS game loop. */
 const SHIELD_ANIMATION_FPS = 12;
 const SHIELD_FRAME_MS = 1000 / SHIELD_ANIMATION_FPS;
+const MAX_SHIELDS = GAME_CONFIG.MAX_SHIELDS;
 
 type TexturePackerFrameEntry = {
   frame: { x: number; y: number; w: number; h: number };
@@ -38,7 +44,6 @@ function buildShieldAtlasFrameTables(): {
   atlasHeight: number;
   frameCount: number;
 } {
-  // Numbered frame names (1.png … 25.png) — not atlas grid order.
   const frameKeys = Object.keys(shieldAtlas.frames).sort((leftKey, rightKey) => {
     const leftNumber = Number.parseInt(leftKey, 10);
     const rightNumber = Number.parseInt(rightKey, 10);
@@ -94,68 +99,39 @@ const layerStyle = StyleSheet.create({
 });
 
 const SHIELD_SLOT_INDICES: number[] = [];
-for (let index = 0; index < GAME_CONFIG.MAX_SHIELDS; index += 1) {
+for (let index = 0; index < MAX_SHIELDS; index += 1) {
   SHIELD_SLOT_INDICES.push(index);
 }
 
-type ShieldPickupRenderSlotProps = {
-  slotIndex: number;
-  viewport: ViewportSize;
+type ShieldSlotShared = {
+  left: SharedValue<number>;
+  top: SharedValue<number>;
+  width: SharedValue<number>;
+  height: SharedValue<number>;
+  opacity: SharedValue<number>;
+};
+
+function createShieldSlotShared(): ShieldSlotShared {
+  return {
+    left: makeMutable(0),
+    top: makeMutable(0),
+    width: makeMutable(SHIELD_WORLD_SIZE.width),
+    height: makeMutable(SHIELD_WORLD_SIZE.height),
+    opacity: makeMutable(0),
+  };
+}
+
+type ShieldPickupVisualProps = {
+  shared: ShieldSlotShared;
   animFrameIndex: SharedValue<number>;
 };
 
-const ShieldPickupRenderSlot = memo(function ShieldPickupRenderSlot({
-  slotIndex,
-  viewport,
+const ShieldPickupVisual = memo(function ShieldPickupVisual({
+  shared,
   animFrameIndex,
-}: ShieldPickupRenderSlotProps) {
-  const engine = useGameEngineContext();
-  const left = useSharedValue(0);
-  const top = useSharedValue(0);
-  const width = useSharedValue<number>(SHIELD_WORLD_SIZE.width);
-  const height = useSharedValue<number>(SHIELD_WORLD_SIZE.height);
-  const opacity = useSharedValue(0);
-
+}: ShieldPickupVisualProps) {
   const clipStyle = useMemo(() => layerStyle.clip, []);
   const atlasImageStyle = useMemo(() => layerStyle.atlasImage, []);
-
-  useEffect(() => {
-    const margin = getShieldRenderMargin();
-
-    return engine.onFrame(() => {
-      const shield = engine.shieldRef.current.shields[slotIndex];
-      if (!shield.active) {
-        if (opacity.value !== 0) {
-          opacity.value = 0;
-        }
-        return;
-      }
-
-      const scrollOffsetY = engine.worldRef.current.scrollOffsetY;
-      const cameraOffsetX = engine.cameraRef.current.offsetX;
-      const rectLeft = shield.worldX - shield.width * 0.5 - cameraOffsetX;
-      const rectTop =
-        worldYCenterToScreenY(scrollOffsetY, shield.worldY) - shield.height * 0.5;
-
-      if (
-        rectLeft + shield.width < -margin ||
-        rectLeft > viewport.width + margin ||
-        rectTop + shield.height < -margin ||
-        rectTop > viewport.height + margin
-      ) {
-        if (opacity.value !== 0) {
-          opacity.value = 0;
-        }
-        return;
-      }
-
-      left.value = rectLeft;
-      top.value = rectTop;
-      width.value = shield.width;
-      height.value = shield.height;
-      opacity.value = 1;
-    });
-  }, [engine, height, left, opacity, slotIndex, top, viewport, width]);
 
   /**
    * Clip viewport = exactly one scaled source frame (179×196), contain-fit + centered
@@ -163,12 +139,12 @@ const ShieldPickupRenderSlot = memo(function ShieldPickupRenderSlot({
    * letterbox pad previously exposed neighboring atlas columns on left/right.
    */
   const animatedClipStyle = useAnimatedStyle(() => {
-    const boundsWidth = width.value;
-    const boundsHeight = height.value;
+    const boundsWidth = shared.width.value;
+    const boundsHeight = shared.height.value;
     if (boundsWidth <= 0 || boundsHeight <= 0) {
       return {
-        left: left.value,
-        top: top.value,
+        left: shared.left.value,
+        top: shared.top.value,
         width: 0,
         height: 0,
         opacity: 0,
@@ -180,7 +156,6 @@ const ShieldPickupRenderSlot = memo(function ShieldPickupRenderSlot({
         ? boundsWidth / SHIELD_SOURCE_FRAME_WIDTH
         : boundsHeight / SHIELD_SOURCE_FRAME_HEIGHT;
 
-    // Integer pixel clip size so scale * source frame maps 1:1 to the viewport.
     const renderedFrameWidth = Math.max(
       1,
       Math.floor(SHIELD_SOURCE_FRAME_WIDTH * containScale),
@@ -193,18 +168,18 @@ const ShieldPickupRenderSlot = memo(function ShieldPickupRenderSlot({
     const padY = Math.floor((boundsHeight - renderedFrameHeight) * 0.5);
 
     return {
-      left: left.value + padX,
-      top: top.value + padY,
+      left: shared.left.value + padX,
+      top: shared.top.value + padY,
       width: renderedFrameWidth,
       height: renderedFrameHeight,
-      opacity: opacity.value,
+      opacity: shared.opacity.value,
     };
   });
 
   const animatedAtlasStyle = useAnimatedStyle(() => {
-    const boundsWidth = width.value;
-    const boundsHeight = height.value;
-    if (boundsWidth <= 0 || boundsHeight <= 0) {
+    const boundsWidth = shared.width.value;
+    const boundsHeight = shared.height.value;
+    if (shared.opacity.value <= 0 || boundsWidth <= 0 || boundsHeight <= 0) {
       return {
         width: 0,
         height: 0,
@@ -227,7 +202,6 @@ const ShieldPickupRenderSlot = memo(function ShieldPickupRenderSlot({
       Math.floor(SHIELD_SOURCE_FRAME_HEIGHT * containScale),
     );
 
-    // Scale from original frame size so one frame fills the clip exactly.
     const scaleX = renderedFrameWidth / SHIELD_SOURCE_FRAME_WIDTH;
     const scaleY = renderedFrameHeight / SHIELD_SOURCE_FRAME_HEIGHT;
 
@@ -244,16 +218,55 @@ const ShieldPickupRenderSlot = memo(function ShieldPickupRenderSlot({
       top: -(frameY * scaleY),
     };
   });
+  const clipCompositeStyle = useMemo(
+    () => [clipStyle, animatedClipStyle],
+    [animatedClipStyle, clipStyle],
+  );
+  const atlasCompositeStyle = useMemo(
+    () => [atlasImageStyle, animatedAtlasStyle],
+    [animatedAtlasStyle, atlasImageStyle],
+  );
 
   return (
-    <Animated.View style={[clipStyle, animatedClipStyle]} pointerEvents="none">
+    <Animated.View style={clipCompositeStyle} pointerEvents="none">
       <AnimatedImage
         source={SHIELD_ATLAS_TEXTURE}
-        style={[atlasImageStyle, animatedAtlasStyle]}
+        style={atlasCompositeStyle}
         resizeMode="stretch"
       />
     </Animated.View>
   );
+});
+
+type ShieldPickupRenderSlotProps = ShieldPickupVisualProps & {
+  slotIndex: number;
+  registerVisibilitySetter: (
+    slotIndex: number,
+    setter: ((visible: boolean) => void) | null,
+  ) => void;
+};
+
+const ShieldPickupRenderSlot = memo(function ShieldPickupRenderSlot({
+  slotIndex,
+  shared,
+  animFrameIndex,
+  registerVisibilitySetter,
+}: ShieldPickupRenderSlotProps) {
+  const [visible, setVisible] = useState(false);
+
+  useEffect(() => {
+    registerVisibilitySetter(slotIndex, setVisible);
+    return () => {
+      registerVisibilitySetter(slotIndex, null);
+    };
+  }, [registerVisibilitySetter, slotIndex]);
+
+  return visible ? (
+    <ShieldPickupVisual
+      shared={shared}
+      animFrameIndex={animFrameIndex}
+    />
+  ) : null;
 });
 
 type ShieldPickupRendererProps = {
@@ -265,24 +278,143 @@ export const ShieldPickupRenderer = memo(function ShieldPickupRenderer({
 }: ShieldPickupRendererProps) {
   const engine = useGameEngineContext();
   const animFrameIndex = useSharedValue(0);
+  const cameraOffsetX = useSharedValue(0);
+  const scrollOffsetY = useSharedValue(0);
+
+  const slots = useMemo(() => {
+    const list: ShieldSlotShared[] = new Array(MAX_SHIELDS);
+    for (let index = 0; index < MAX_SHIELDS; index += 1) {
+      list[index] = createShieldSlotShared();
+    }
+    return list;
+  }, []);
+  const lastShieldIdRef = useRef(new Int32Array(MAX_SHIELDS));
+  const visibilitySettersRef = useRef<
+    (((visible: boolean) => void) | null)[]
+  >(new Array(MAX_SHIELDS).fill(null));
+  const visibleSlotsRef = useRef(new Uint8Array(MAX_SHIELDS));
+
+  const registerVisibilitySetter = useCallback(
+    (
+      slotIndex: number,
+      setter: ((visible: boolean) => void) | null,
+    ) => {
+      visibilitySettersRef.current[slotIndex] = setter;
+      setter?.(visibleSlotsRef.current[slotIndex] === 1);
+    },
+    [],
+  );
 
   useEffect(() => {
-    return engine.onFrame(() => {
+    const margin = getShieldRenderMargin();
+    const visibleSlots = visibleSlotsRef.current;
+    const setSlotVisible = (slotIndex: number, visible: boolean): void => {
+      const nextValue = visible ? 1 : 0;
+      if (visibleSlots[slotIndex] === nextValue) {
+        return;
+      }
+      visibleSlots[slotIndex] = nextValue;
+      visibilitySettersRef.current[slotIndex]?.(visible);
+    };
+
+    return engine.onPlayingFrame(() => {
       const elapsedMs = engine.timeRef.current.elapsedMs;
-      animFrameIndex.value = Math.floor(elapsedMs / SHIELD_FRAME_MS) % SHIELD_FRAME_COUNT;
+      writeSharedNumber(
+        animFrameIndex,
+        Math.floor(elapsedMs / SHIELD_FRAME_MS) % SHIELD_FRAME_COUNT,
+      );
+
+      const shields = engine.shieldRef.current.shields;
+      const nextScrollOffsetY = engine.worldRef.current.scrollOffsetY;
+      const nextCameraOffsetX = engine.cameraRef.current.offsetX;
+      const viewportWidth = viewport.width;
+      const viewportHeight = viewport.height;
+      const lastShieldId = lastShieldIdRef.current;
+      writeSharedNumber(scrollOffsetY, nextScrollOffsetY);
+      writeSharedNumber(cameraOffsetX, nextCameraOffsetX);
+
+      for (let slotIndex = 0; slotIndex < MAX_SHIELDS; slotIndex += 1) {
+        const slot = slots[slotIndex];
+        const shield = shields[slotIndex];
+
+        if (!shield.active) {
+          lastShieldId[slotIndex] = 0;
+          setSlotVisible(slotIndex, false);
+          writeSharedNumber(slot.opacity, 0);
+          continue;
+        }
+
+        const localLeft = shield.worldX - shield.width * 0.5;
+        const localTop = -shield.worldY - shield.height * 0.5;
+        const screenLeft = localLeft - nextCameraOffsetX;
+        const screenTop = localTop + nextScrollOffsetY;
+
+        if (
+          screenLeft + shield.width < -margin ||
+          screenLeft > viewportWidth + margin ||
+          screenTop + shield.height < -margin ||
+          screenTop > viewportHeight + margin
+        ) {
+          setSlotVisible(slotIndex, false);
+          writeSharedNumber(slot.opacity, 0);
+          continue;
+        }
+
+        if (lastShieldId[slotIndex] !== shield.id) {
+          lastShieldId[slotIndex] = shield.id;
+          writeSharedNumber(slot.left, localLeft);
+          writeSharedNumber(slot.top, localTop);
+          writeSharedNumber(slot.width, shield.width);
+          writeSharedNumber(slot.height, shield.height);
+        }
+        writeSharedNumber(slot.opacity, 1);
+        setSlotVisible(slotIndex, true);
+      }
     });
-  }, [animFrameIndex, engine]);
+  }, [
+    animFrameIndex,
+    cameraOffsetX,
+    engine,
+    scrollOffsetY,
+    slots,
+    viewport.height,
+    viewport.width,
+  ]);
+
+  const layerTransformStyle = useAnimatedStyle<ViewStyle>(() => ({
+    transform: [
+      { translateX: -cameraOffsetX.value },
+      { translateY: scrollOffsetY.value },
+    ] as ViewStyle['transform'],
+  }));
+  const animatedLayerStyle = useMemo(
+    () => [layerStyle.root, layerTransformStyle],
+    [layerTransformStyle],
+  );
+
+  const renderSlot = useCallback(
+    (slotIndex: number) => (
+      <ShieldPickupRenderSlot
+        key={slotIndex}
+        slotIndex={slotIndex}
+        shared={slots[slotIndex]}
+        animFrameIndex={animFrameIndex}
+        registerVisibilitySetter={registerVisibilitySetter}
+      />
+    ),
+    [animFrameIndex, registerVisibilitySetter, slots],
+  );
+  const slotElements = useMemo(
+    () => SHIELD_SLOT_INDICES.map(renderSlot),
+    [renderSlot],
+  );
 
   return (
-    <View style={layerStyle.root} pointerEvents="none">
-      {SHIELD_SLOT_INDICES.map((slotIndex) => (
-        <ShieldPickupRenderSlot
-          key={slotIndex}
-          slotIndex={slotIndex}
-          viewport={viewport}
-          animFrameIndex={animFrameIndex}
-        />
-      ))}
-    </View>
+    <Animated.View
+      style={animatedLayerStyle}
+      pointerEvents="none"
+    >
+      {slotElements}
+    </Animated.View>
   );
 });

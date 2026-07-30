@@ -35,6 +35,7 @@ export function createSkiTrackState(): SkiTrackState {
     lastSampleWorldX: 0,
     lastSampleWorldY: 0,
     hasLastSample: false,
+    layoutRevision: 0,
     activeSegmentCount: 0,
     segLeftCenterX: new Float64Array(MAX_SEGMENTS),
     segLeftCenterY: new Float64Array(MAX_SEGMENTS),
@@ -71,12 +72,16 @@ export function getSkiTrackSegmentSlotIndices(): readonly number[] {
 }
 
 export function resetSkiTrackState(state: SkiTrackState): void {
+  const changed = state.count !== 0 || state.hasLastSample || state.activeSegmentCount !== 0;
   state.start = 0;
   state.count = 0;
   state.hasLastSample = false;
   state.lastSampleWorldX = 0;
   state.lastSampleWorldY = 0;
   state.activeSegmentCount = 0;
+  if (changed) {
+    state.layoutRevision += 1;
+  }
 }
 
 export function resetAllSkiTrackStates(engine: GameEngine): void {
@@ -92,6 +97,7 @@ function pushTrackPoint(state: SkiTrackState, worldX: number, worldY: number): v
     state.points[index].x = worldX;
     state.points[index].y = worldY;
     state.count += 1;
+    state.layoutRevision += 1;
     return;
   }
 
@@ -99,6 +105,7 @@ function pushTrackPoint(state: SkiTrackState, worldX: number, worldY: number): v
   const writeIndex = (state.start + maxPoints - 1) % maxPoints;
   state.points[writeIndex].x = worldX;
   state.points[writeIndex].y = worldY;
+  state.layoutRevision += 1;
 }
 
 function popOldestTrackPoint(state: SkiTrackState): void {
@@ -107,6 +114,7 @@ function popOldestTrackPoint(state: SkiTrackState): void {
   }
   state.start = (state.start + 1) % GAME_CONFIG.SKI_TRACK_MAX_POINTS;
   state.count -= 1;
+  state.layoutRevision += 1;
 }
 
 function resolveFeetWorldPosition(
@@ -240,8 +248,6 @@ export function tickSkiTrackSampling(engine: GameEngine, fixedDeltaMs: number): 
 
 export function rebuildSkiTrackSegmentLayouts(
   state: SkiTrackState,
-  scrollOffsetY: number,
-  cameraOffsetX: number,
 ): void {
   const pointCount = state.count;
   if (pointCount < 2) {
@@ -264,10 +270,12 @@ export function rebuildSkiTrackSegmentLayouts(
     const point0 = state.points[index0];
     const point1 = state.points[index1];
 
-    const screenX0 = point0.x - cameraOffsetX;
-    const screenY0 = scrollOffsetY - point0.y;
-    const screenX1 = point1.x - cameraOffsetX;
-    const screenY1 = scrollOffsetY - point1.y;
+    // Store camera-independent local coordinates. The renderer moves the entire
+    // track layer with one translateX/translateY pair every display frame.
+    const screenX0 = point0.x;
+    const screenY0 = -point0.y;
+    const screenX1 = point1.x;
+    const screenY1 = -point1.y;
 
     const deltaX = screenX1 - screenX0;
     const deltaY = screenY1 - screenY0;
@@ -334,33 +342,8 @@ export function isSkiTrackSegmentVisible(
   return true;
 }
 
-export function readSkiTrackSegmentLayout(
-  state: SkiTrackState,
-  segmentIndex: number,
-): {
-  leftCenterX: number;
-  leftCenterY: number;
-  rightCenterX: number;
-  rightCenterY: number;
-  length: number;
-  angleDeg: number;
-  opacity: number;
-} {
-  return {
-    leftCenterX: state.segLeftCenterX[segmentIndex],
-    leftCenterY: state.segLeftCenterY[segmentIndex],
-    rightCenterX: state.segRightCenterX[segmentIndex],
-    rightCenterY: state.segRightCenterY[segmentIndex],
-    length: state.segLength[segmentIndex],
-    angleDeg: state.segAngleDeg[segmentIndex],
-    opacity: state.segOpacity[segmentIndex],
-  };
-}
-
 export function syncSkiTrackRendererFrame(engine: GameEngine, _viewport: ViewportSize): void {
   const bundle = getSkiTrackBundle(engine);
-  const scrollOffsetY = engine.worldRef.current.scrollOffsetY;
-  const cameraOffsetX = engine.cameraRef.current.offsetX;
-  rebuildSkiTrackSegmentLayouts(bundle.player, scrollOffsetY, cameraOffsetX);
-  rebuildSkiTrackSegmentLayouts(bundle.chaser, scrollOffsetY, cameraOffsetX);
+  rebuildSkiTrackSegmentLayouts(bundle.player);
+  rebuildSkiTrackSegmentLayouts(bundle.chaser);
 }

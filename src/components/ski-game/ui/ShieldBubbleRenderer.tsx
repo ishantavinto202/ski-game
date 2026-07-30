@@ -73,7 +73,7 @@ export const ShieldBubbleRenderer = memo(function ShieldBubbleRenderer({
       playerX.value = livePlayer.x;
     }
 
-    return engine.onFrame(() => {
+    return engine.onPlayingFrame(() => {
       const currentPlayer = engine.playerRef.current;
       if (currentPlayer) {
         playerX.value = currentPlayer.x;
@@ -102,13 +102,25 @@ export const ShieldBubbleRenderer = memo(function ShieldBubbleRenderer({
   const animatedPulseStyle = useAnimatedStyle(() => ({
     transform: [{ scale: pulseScale.value }],
   }));
+  const positionCompositeStyle = useMemo(
+    () => [
+      bubbleStyles.positionWrapper,
+      staticPositionStyle,
+      animatedPositionStyle,
+    ],
+    [animatedPositionStyle, staticPositionStyle],
+  );
+  const pulseCompositeStyle = useMemo(
+    () => [bubbleStyles.pulseContainer, animatedPulseStyle],
+    [animatedPulseStyle],
+  );
 
   return (
     <Animated.View
-      style={[bubbleStyles.positionWrapper, staticPositionStyle, animatedPositionStyle]}
+      style={positionCompositeStyle}
       pointerEvents="none"
     >
-      <Animated.View style={[bubbleStyles.pulseContainer, animatedPulseStyle]} pointerEvents="none">
+      <Animated.View style={pulseCompositeStyle} pointerEvents="none">
         <Image
           source={SHIELD_BUBBLE_TEXTURE}
           style={imageStyle}

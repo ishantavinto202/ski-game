@@ -3,7 +3,7 @@ import { Image, StyleSheet } from 'react-native';
 import Animated, { useAnimatedStyle, useSharedValue } from 'react-native-reanimated';
 
 import { useGameEngineContext } from '../engine/GameEngineContext';
-import { GAME_CONFIG } from '../utils/GameConfig';
+import { GAME_CONFIG, perfFeatureEnabled } from '../utils/GameConfig';
 import {
   CHASER_ATLAS_TEXTURE,
   PLAYER_ATLAS,
@@ -76,9 +76,11 @@ export const ChaserRenderer = memo(function ChaserRenderer() {
       opacity.value = 1;
 
       // Independent ski-cycle timing (does not copy player frame).
-      animFrameIndex.value =
-        Math.floor(engine.timeRef.current.elapsedMs / CHASER_FRAME_MS) %
-        PLAYER_SPRITE_FRAME_COUNT;
+      if (perfFeatureEnabled('ANIMATION')) {
+        animFrameIndex.value =
+          Math.floor(engine.timeRef.current.elapsedMs / CHASER_FRAME_MS) %
+          PLAYER_SPRITE_FRAME_COUNT;
+      }
 
       // Cosmetic lean from chaser horizontal motion only (renderer-local).
       if (Number.isNaN(prevX.value)) {
@@ -104,7 +106,7 @@ export const ChaserRenderer = memo(function ChaserRenderer() {
 
     syncChaserVisual();
 
-    return engine.onFrame(syncChaserVisual);
+    return engine.onPlayingFrame(syncChaserVisual);
   }, [animFrameIndex, engine, leanAngle, left, opacity, prevX, top]);
 
   const animatedClipStyle = useAnimatedStyle(() => ({
@@ -132,12 +134,20 @@ export const ChaserRenderer = memo(function ChaserRenderer() {
       top: -cropY,
     };
   });
+  const clipCompositeStyle = useMemo(
+    () => [clipStyle, animatedClipStyle],
+    [animatedClipStyle, clipStyle],
+  );
+  const atlasCompositeStyle = useMemo(
+    () => [atlasImageStyle, animatedAtlasStyle],
+    [animatedAtlasStyle, atlasImageStyle],
+  );
 
   return (
-    <Animated.View style={[clipStyle, animatedClipStyle]} pointerEvents="none">
+    <Animated.View style={clipCompositeStyle} pointerEvents="none">
       <AnimatedImage
         source={CHASER_ATLAS_TEXTURE}
-        style={[atlasImageStyle, animatedAtlasStyle]}
+        style={atlasCompositeStyle}
         resizeMode="stretch"
       />
     </Animated.View>

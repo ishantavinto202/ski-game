@@ -184,7 +184,7 @@ The Ski Game lives under `src/components/ski-game/` as a self-contained module. 
 
 **Obstacle layout:** Patterns respect `OBSTACLE_MIN_SAFE_LANE_WIDTH_RATIO` and `OBSTACLE_MAX_PATTERN_WIDTH_RATIO`, computed via `minSafeLaneWidthPx()` / `maxObstaclePatternWidthPx()` from the live viewport width.
 
-**HUD (portrait):** Hearts, score, and distance top-left; **ActiveEffectDurationHud** top-center (⚡ speed + 🛡 shield bars while active); **PauseButton** top-right (safe area). Metrics from `engine.onFrame` refs only.
+**HUD (portrait):** Hearts, score, and distance top-left; **ActiveEffectDurationHud** top-center (⚡ speed + 🛡 shield bars while active); **PauseButton** top-right (safe area). Metrics sync from engine refs through `engine.onPlayingFrame` and Reanimated shared values only.
 
 ## Folder layout
 
@@ -213,7 +213,7 @@ src/components/ski-game/
 3. **SkiGameViewport** — Registers core systems (through **SpawnManager**), starts **GameLoop** after layout, and mounts renderers, **Hud**, **TouchControls**, and pause UI. Layout and spawn use one-time React updates only.
 4. **GameManager** — Owns the active engine instance for the current session (`createEngine` / `destroyEngine`).
 5. **GameEngine** — Holds mutable **refs** (including `spawnRef`, `obstacleRef`), `inputActionsRef`, `runFixedUpdate`, frame listeners, viewport notifications, and **GameSystem** registration.
-6. **GameLoop** — `requestAnimationFrame` driver with a fixed timestep accumulator (`FIXED_TIMESTEP`, 60 FPS target). Runs gameplay fixed steps only while `gameStateRef.currentState === 'playing'`; always calls `runGameStateFixedUpdate` when idle/paused/game over, then `engine.notifyFrame` every frame so rendering stays live.
+6. **GameLoop** — `requestAnimationFrame` driver with a fixed timestep accumulator (`FIXED_TIMESTEP`, 60 FPS target). Runs gameplay fixed steps only while `gameStateRef.currentState === 'playing'`; catch-up is capped at four fixed steps so a delayed frame cannot create an eight-step CPU spike. It always calls `runGameStateFixedUpdate` when idle/paused/game over, then `engine.notifyFrame` every frame so transition UI stays live.
 7. **useGameEngineContext** — Access the engine from nested components without prop drilling.
 
 ## Game state
@@ -256,7 +256,7 @@ stateDiagram-v2
 
 **Update flow (each animation frame):**
 
-1. **GameLoop** `onFrame` — if `playing`, drain fixed timestep accumulator with `engine.runFixedUpdate` (each step runs **GameStateSystem** first, then all other systems). If not `playing`, call `engine.runGameStateFixedUpdate(0)` once and reset accumulator (no simulation catch-up while idle/paused/game over).
+1. **GameLoop** `onFrame` — if `playing`, drain the bounded fixed timestep accumulator with `engine.runFixedUpdate` (maximum four steps; each step runs **GameStateSystem** first, then all other systems). If not `playing`, call `engine.runGameStateFixedUpdate(0)` once and reset the accumulator (no simulation catch-up while idle/paused/game over).
 2. **GameStateSystem** — consume `pendingTransition`, update `previousState` / `currentState` when valid.
 3. **GameEngine.runFixedUpdate** — after game state step, return early unless `currentState === 'playing'`; otherwise run remaining systems in registration order.
 4. **notifyFrame** — always runs; renderers and HUD keep syncing from refs regardless of state.
@@ -316,7 +316,7 @@ Detects zero health during play and shows a summary overlay.
 |------|------|
 | `systems/GameOverSystem.ts` | If `playing` and `healthRef.currentHealth <= 0` → cache summary on `gameOverCacheRef`, then `requestGameOver(engine)` |
 | `ui/GameOverTypes.ts` | Overlay props, summary/cache helpers, quit placeholder |
-| `ui/GameOverOverlay.tsx` | Visible when `game_over`; stats via Reanimated + `engine.onFrame`; Play Again → Scoring Guide → Quit |
+| `ui/GameOverOverlay.tsx` | Visible when `game_over`; transition listener captures stats once into Reanimated values; Play Again → Scoring Guide → Quit |
 
 **Gameplay rule:** **GameOverSystem** never assigns `gameStateRef.currentState`; only **GameStateSystem** applies `game_over` from `pendingTransition`.
 
@@ -392,7 +392,7 @@ Simulation state lives in engine refs. React reads layout once; scrolling update
 | `systems/WorldSystem.ts` | Increments `worldRef.scrollOffsetY` at `BASE_SCROLL_SPEED` × `difficultyRef.speedMultiplier` × speed-boost multiplier |
 | `engine/GameLoop.ts` | Fixed timestep loop (cap on catch-up steps) |
 | `hooks/useGameLoop.ts` | Starts/stops the loop when the viewport is ready |
-| `ui/WorldRenderer.tsx` | Tiled snow strip; vertical `translateY` from scroll; horizontal `translateX` from `cameraRef` via shared values + `engine.onFrame` |
+| `ui/WorldRenderer.tsx` | Tiled snow strip; vertical `translateY` from scroll; horizontal `translateX` from `cameraRef` via shared values + `engine.onPlayingFrame` |
 | `utils/world-coordinates.ts` | `worldYToScreenY` (`scrollOffsetY - worldY`), spawn ahead via `scrollOffsetY + offset`, despawn/render helpers |
 
 **GameConfig:** `BASE_SCROLL_SPEED`, `FIXED_TIMESTEP`, `DIFFICULTY_RAMP_DURATION_MS`, `MAX_DIFFICULTY_SPEED_MULTIPLIER`, `MIN_SPAWN_INTERVAL_MULTIPLIER`, plus portrait tuning (`REFERENCE_VIEWPORT_*`, `LOOK_AHEAD_VIEWPORT_HEIGHT_RATIO`, `PLAYER_LOOKAHEAD_RATIO`, steer/obstacle ratios — see **Portrait orientation**).
@@ -557,7 +557,7 @@ Every fixed step while lanes are valid, **SpawnManager** extends the mountain **
 
 **Temporary cabin debug:** **`utils/cabin-debug.ts`** (`CABIN_DEBUG_ENABLED`) logs `[CABIN]` events for patterns containing a cabin through population, enqueue, **ObstacleSystem**, and **ObstacleRenderer**; **`logCabinDebugSummary()`** runs on game over. Remove when done investigating.
 
-**Temporary force-cabin debug:** **`utils/spawn-debug.ts`** (`DEBUG_FORCE_CABIN`) places one **`cabin_avoidance`** on the first non-safe population slot per run, then weighted selection resumes. Set flag **`false`** after confirming the red cabin placeholder on screen.
+**Temporary force-cabin debug:** **`utils/spawn-debug.ts`** (`DEBUG_FORCE_CABIN`) can place one **`cabin_avoidance`** on the first non-safe population slot per run, then weighted selection resumes. It is `false` by default so production gameplay uses normal weighted selection.
 
 **ObstacleSystem** remains unaware of patterns; it only consumes **SpawnRequest** rows.
 
@@ -744,7 +744,7 @@ All six gameplay obstacle variants now use final PNG artwork — **no obstacle p
 **Rendering flow:**
 
 1. **SkiGameViewport** layer order: **WorldRenderer** → **SnowSurfaceRenderer** → **SkiTrackRenderer** → **ChaserRenderer** → **ShieldBubbleRenderer** → **PlayerRenderer** → **ObstacleRenderer** → **CoinRenderer** → **SpeedBoostRenderer** → **ShieldPickupRenderer** → **CollisionBurstRenderer** → **ShieldShatterRenderer** → **GameplayFeedbackRenderer** → **Hud** → **TouchControls** → **PauseButton** → **PauseOverlay** → **GameOverOverlay**.
-2. Each frame, `engine.onFrame` updates shared values per fixed slot index (`obstacleRef.obstacles[i]`).
+2. One renderer-level `engine.onPlayingFrame` callback updates shared values across fixed slot indices (`obstacleRef.obstacles[i]`); a source change re-renders only that memoized obstacle slot.
 3. Screen rect: center-anchored world position minus `worldRef.scrollOffsetY` and `cameraRef.offsetX`.
 4. Culled if outside viewport ± `OBSTACLE_RENDER_MARGIN` (`opacity` 0); inactive slots hidden.
 5. No component mount/unmount per frame; pool indices map 1:1 to render slots.
@@ -855,7 +855,7 @@ Health-driven vertical follower behind the skier — **not** a second simulated 
 | `entities/Chaser.ts` | `resolveChaserHealthTargetGap`, `resolveChaserFinalTargetGap`, `snapChaserBehindPlayer` |
 | `entities/ChaserAvoidance.ts` | Local visual obstacle steering (allocation-free scan) |
 | `systems/ChaserSystem.ts` | Gap + horizontal smoothing; Speed Boost escape; avoidance integration |
-| `ui/ChaserRenderer.tsx` | Recolored skier atlas (`texture_2.png`); shares player atlas frame geometry; Reanimated `onFrame` sync from `chaserRef` |
+| `ui/ChaserRenderer.tsx` | Recolored skier atlas (`texture_2.png`); shares player atlas frame geometry; Reanimated `onPlayingFrame` sync from `chaserRef` |
 
 **`engine.chaserRef` fields:** `currentGap`, `targetGap`, screen `x` / `y`, `avoidObstacleId`, `avoidDirection`, `lastAvoidDirection`, `path` (fixed-capacity world-space breadcrumb ring buffer).
 
@@ -929,7 +929,7 @@ const { totalCoinsCollected, activeCount, coins } = engine.coinRef.current;
 **Rendering flow:**
 
 1. **SkiGameViewport** draws coins **above ObstacleRenderer** and **below PlayerRenderer**.
-2. Each frame, `engine.onFrame` updates shared values per fixed slot index (`coinRef.coins[i]`).
+2. One renderer-level `engine.onPlayingFrame` callback updates shared values per fixed slot index (`coinRef.coins[i]`).
 3. Screen rect: `coinWorldToScreenRect` — center-anchored world position minus `worldRef.scrollOffsetY` and `cameraRef.offsetX`.
 4. Culled if outside viewport ± `COIN_RENDER_MARGIN` (`opacity` 0); inactive slots hidden.
 5. **Atlas animation:** `assets/assets/Coin Animations/texture.png` + `texture.json` (TexturePacker frames sorted **1–24**); clip + translate crop at **~12 FPS** from `timeRef.elapsedMs`; drawn at `COIN_WORLD_SIZE` (28×28 world box).
@@ -989,7 +989,7 @@ Short-lived pooled bursts — **presentation only**; gameplay systems unchanged.
 
 **Shield shatter:** Observes `previousShieldActive && !isShieldActive && hasCollision` after fixed updates (shield consumed on hit, not timer-only expiry in normal play). Spawns **10–14** cyan fragments; lifetime **300–400 ms**.
 
-Both use `engine.onFrame` ticks (frame delta), Reanimated pooled slots, and `WeakMap` pools per `GameEngine` (same style as **Snow trail**).
+Both use one `engine.onPlayingFrame` tick per renderer (frame delta), Reanimated pooled slots, and `WeakMap` pools per `GameEngine` (same style as **Snow trail**).
 
 ## Shield
 
@@ -1028,7 +1028,7 @@ Pooled shield pickups and timed collision immunity — gameplay in **ShieldSyste
 **Shield pickup rendering:**
 
 1. **SkiGameViewport** draws shield pickups **above SpeedBoostRenderer** and **below PlayerRenderer**. Shield enqueue placement uses full obstacle occupancy (active + pending) plus **`SHIELD_PICKUP_SPAWN_CLEARANCE`** so pickups avoid grey rocks.
-2. Each frame, `engine.onFrame` updates shared values per fixed slot index (`shieldRef.shields[i]`).
+2. One renderer-level `engine.onPlayingFrame` callback updates shared values per fixed slot index (`shieldRef.shields[i]`).
 3. Screen rect: `shieldWorldToScreenRect` — same center-anchored math as collection in **ShieldSystem**.
 4. Culled if outside viewport ± `SHIELD_RENDER_MARGIN` (`opacity` 0); inactive slots hidden.
 5. **Atlas animation:** `assets/assets/Shield Animations/shield-sprite.png` + `shield-sprite.json` (TexturePacker frames sorted **1–25** by name, not atlas grid order); clip + translate crop at **~12 FPS** from `timeRef.elapsedMs`; drawn contain-fit inside `SHIELD_WORLD_SIZE` (32×32 world box — gameplay geometry unchanged).
@@ -1036,7 +1036,7 @@ Pooled shield pickups and timed collision immunity — gameplay in **ShieldSyste
 **Shield bubble (presentation):**
 
 1. **ShieldBubbleRenderer** mounts **below** **PlayerRenderer** (`assets/assets/shield-bubble.png`, ~`player.width × 1.9` wide with 400:492 aspect; centered on player screen center; pulse only — no lean).
-2. Each frame, `engine.onFrame` reads `shieldRef.isShieldActive`, `playerRef.x`, and `playerFeelRef.leanAngle` (same sync as **PlayerRenderer**).
+2. Each playing frame, `engine.onPlayingFrame` reads `shieldRef.isShieldActive`, `playerRef.x`, and `playerFeelRef.leanAngle` (same sync as **PlayerRenderer**).
 3. Circle diameter unchanged: **`2 × 1.35 × PLAYER_WIDTH`**, centered on the player placeholder.
 4. **Fill** ~40% sky-blue alpha; **4 px** bright border (lighter than fill); optional **outer glow ring** (semi-transparent border, no blur).
 5. Breathing pulse: scale **1.00 → 1.08 → 1.00** over **1 s** via `timeRef.elapsedMs` (Reanimated shared values; hidden when inactive).
@@ -1088,7 +1088,7 @@ Pooled speed boost pickups and timed scroll multiplier — gameplay in **SpeedBo
 **Rendering flow:**
 
 1. **SkiGameViewport** draws speed boost pickups **above CoinRenderer** and **below PlayerRenderer**.
-2. Each frame, `engine.onFrame` updates shared values per fixed slot index (`speedBoostRef.speedBoosts[i]`).
+2. One renderer-level `engine.onPlayingFrame` callback updates shared values per fixed slot index (`speedBoostRef.speedBoosts[i]`).
 3. Screen rect: `speedBoostWorldToScreenRect` — same center-anchored math as collection in **SpeedBoostSystem**.
 4. Culled if outside viewport ± `SPEED_BOOST_RENDER_MARGIN` (`opacity` 0); inactive slots hidden.
 5. **Atlas animation:** `assets/assets/Thunder Animations/speed-boost-sprite.png` + `speed-boost-sprite.json` (TexturePacker frames sorted by numeric name; same clip-viewport strategy as **ShieldPickupRenderer**); ~12 FPS from `timeRef.elapsedMs`; contain-fit centered inside `SPEED_BOOST_WORLD_SIZE` (32×32 — gameplay geometry unchanged).
@@ -1113,7 +1113,7 @@ Read-only overlay for hearts, score, distance, and active speed/shield duration 
 
 | File | Role |
 |------|------|
-| `ui/Hud.tsx` | Layout + `engine.onFrame` → Reanimated shared values |
+| `ui/Hud.tsx` | Layout + `engine.onPlayingFrame` → gated Reanimated shared values |
 | `ui/ActiveEffectDurationHud.tsx` | Top-center ⚡ speed + 🛡 shield countdown bars |
 | `ui/SpeedBoostDurationHud.tsx` | Re-exports **ActiveEffectDurationHud** (compat) |
 | `ui/HudStyles.ts` | Minimal styles, inset constants |
@@ -1124,7 +1124,7 @@ Read-only overlay for hearts, score, distance, and active speed/shield duration 
 1. **TimeSystem** advances `engine.timeRef.current.totalDistance` (world scroll / run distance) and awards passive distance score on `scoreRef` (+1 per `DISTANCE_METERS_PER_SCORE_POINT` meters; no GameplayFeedback).
 2. **HealthSystem** maintains `engine.healthRef.current.currentHealth` and applies obstacle score penalties.
 3. **CoinSystem** increments `engine.coinRef.current.totalCoinsCollected` and `engine.scoreRef.current.currentScore` on collection.
-4. **Hud** subscribes once via `engine.onFrame` and copies those ref fields into shared values (`currentHealth`, `currentScore`, `totalDistance`) — **no React state** for gameplay numbers.
+4. **Hud** subscribes once via `engine.onPlayingFrame` and copies changed ref fields into shared values (`currentHealth`, `currentScore`, `totalDistance`) — **no React state** for gameplay numbers and no screen-tree timer render.
 5. **HudHeart** toggles heart opacity from `currentHealth`; **HudNumberField** uses `useAnimatedProps` on a non-editable `TextInput` for score and distance (`m` suffix).
 6. **ActiveEffectDurationHud** mirrors `speedBoostRef` and `shieldRef` (`isSpeedBoostActive` / `remainingSpeedBoostMs`, `isShieldActive` / `remainingShieldMs`) into shared values; fill widths use **GameConfig** durations (no duplicate timers).
 
@@ -1138,7 +1138,7 @@ Read-only overlay for hearts, score, distance, and active speed/shield duration 
 
 - Speed bar visible only while `isSpeedBoostActive`; fill = `remainingSpeedBoostMs / SPEED_BOOST_DURATION_MS`.
 - Shield bar visible only while `isShieldActive`; fill = `remainingShieldMs / SHIELD_DURATION_MS` (teal fill via `shieldDurationBarFill`).
-- Reanimated shared values updated in `engine.onFrame`; cluster `opacity` 0 when inactive.
+- Reanimated shared values update in `engine.onPlayingFrame`; cluster `opacity` is 0 when inactive and timer updates never enter React state.
 
 **Viewport layer order (bottom → top):**
 
@@ -1162,7 +1162,7 @@ Horizontal player motion only; vertical progress stays on **WorldSystem** scroll
 |------|------|
 | `systems/MovementSystem.ts` | Reads `inputRef`, updates `movementRef.velocityX` and `playerRef.current.x` each fixed step |
 | `types/movement-state.ts` | `MovementState` (`velocityX`) stored on `engine.movementRef` |
-| `ui/PlayerRenderer.tsx` | Syncs `left`, steer **lean** (`rotate`), skier **sprite frame**, and damage **blink** (`opacity` square wave from `healthRef` invulnerability) via Reanimated + `engine.onFrame` (no React state) |
+| `ui/PlayerRenderer.tsx` | Syncs `left`, steer **lean** (`rotate`), skier **sprite frame**, and damage **blink** (`opacity` square wave from `healthRef` invulnerability) via Reanimated + `engine.onPlayingFrame` (no React state) |
 
 **GameConfig (movement):**
 
@@ -1272,7 +1272,7 @@ The root route `app/index.tsx` renders **SkiGameScreen** fullscreen (Stack root,
 
 - **SkiGameScreen**, **SkiGameRoot**, **SkiGameViewport**, **SkiGameBackground**, **MainMenu**, **PlayerRenderer**, **SkiTrackRenderer**, **SnowSurfaceRenderer**, **CollisionBurstRenderer**, **ShieldShatterRenderer**, **ShieldPickupRenderer**, **ShieldBubbleRenderer**, **ObstacleRenderer**, **CoinRenderer**, **SpeedBoostRenderer**, **WorldRenderer**, **Hud**, and **TouchControls** are wrapped in `React.memo`.
 - Input: **`engine.inputRef`** only — **TouchControls** uses stable `useCallback` handlers; no input `useState`.
-- Simulation: no per-frame `useState`; **WorldRenderer** uses Reanimated `useSharedValue` updated from `engine.onFrame`.
+- Simulation: no per-frame `useState`; **WorldRenderer** uses Reanimated `useSharedValue` updated from `engine.onPlayingFrame`.
 - Styles use `StyleSheet.create` for stable references.
 - Zustand: use narrow selectors when state is added; avoid subscribing the full screen tree to high-frequency updates.
 
@@ -1430,3 +1430,199 @@ npm install
 - Reanimated
 - Zustand
 - React Query
+
+---
+
+# Phase 3.5 — Runtime Profiling
+
+Instrumentation only (no gameplay/render changes). Enable `GAME_CONFIG.PERFORMANCE_PROFILING`, play ~60s in a **dev** build, tap **Dump** on the PERF overlay, paste the console markdown into `docs/PERFORMANCE-RUNTIME-REPORT.md`.
+
+Details: `docs/PERFORMANCE-PHASE-3.5.md`. The flag is `false` by default; set it back to `false` after every capture.
+
+---
+
+# Performance stabilization — 2026-07-29
+
+## Files added or modified
+
+| Area | Files |
+|------|-------|
+| Documentation | `Readme.md`; added `docs/PERFORMANCE-AUDIT-PHASE-1.md`, `docs/PERFORMANCE-PHASE-2.md`, `docs/PERFORMANCE-PHASE-3.md`, `docs/PERFORMANCE-PHASE-3.5.md`, `docs/PERFORMANCE-RUNTIME-REPORT.md` |
+| Profiling | Added `profiling/PerformanceProfiling.ts`, `profiling/PerformanceOverlay.tsx` |
+| Engine/layout | `components/SkiGameViewport.tsx`, `engine/GameEngine.ts`, `engine/GameLoop.ts`, `effects/SkiTrack.ts` |
+| Entities/managers | `entities/ChaserAvoidance.ts`, `entities/Coin.ts`, `entities/Obstacle.ts`, `entities/Shield.ts`, `entities/SpeedBoost.ts`, `managers/SpawnManager.ts` |
+| Systems | `systems/CameraSystem.ts`, `systems/CoinSystem.ts`, `systems/CollisionSystem.ts`, `systems/HealthSystem.ts`, `systems/ObstacleSystem.ts`, `systems/SnowSurfaceSystem.ts` |
+| Render/UI | `ui/ActiveEffectDurationHud.tsx`, `ui/ChaserRenderer.tsx`, `ui/CoinRenderer.tsx`, `ui/CollisionBurstRenderer.tsx`, `ui/EdgeTreeRenderer.tsx`, `ui/GameOverOverlay.tsx`, `ui/GameplayFeedbackRenderer.tsx`, `ui/Hud.tsx`, `ui/MainMenu.tsx`, `ui/ObstacleRenderer.tsx`, `ui/PauseButton.tsx`, `ui/PauseOverlay.tsx`, `ui/PlayerRenderer.tsx`, `ui/ScoringGuideOverlay.tsx`, `ui/ScoringGuideRow.tsx`, `ui/ShieldBubbleRenderer.tsx`, `ui/ShieldPickupRenderer.tsx`, `ui/ShieldShatterRenderer.tsx`, `ui/SkiTrackRenderer.tsx`, `ui/SnowSurfaceRenderer.tsx`, `ui/SpeedBoostRenderer.tsx`, `ui/WorldRenderer.tsx` |
+| Utilities | Added `utils/shared-value-write.ts`; modified `utils/GameConfig.ts`, `utils/shield-rock-overlap-debug.tsx`, `utils/spawn-debug.ts`, `utils/spawn-population.ts`, `utils/spawn-validation.ts` |
+
+## Architectural changes
+
+- Kept the existing hierarchy intact. No new provider, gameplay store, screen, system, or renderer layer was introduced.
+- `GameEngine` exposes two stable frame channels: `onFrame` for state-transition UI and `onPlayingFrame` for world/entity synchronization. Paused and game-over frames do not fan out through every pooled renderer.
+- Each pooled renderer owns one frame listener and updates preallocated SharedValues by slot. Slot elements are memoized; a single obstacle asset or snow type change updates only its memoized slot, never the full world/viewport tree.
+- The normal SharedValue writer is selected once at module load. With profiling disabled, hot writes do not call into profiling code.
+- Mutable simulation, timers, pools, and input remain on engine refs/SharedValues. Zustand has no gameplay subscription; future use must remain selector-only.
+
+## Gameplay systems implemented or preserved
+
+- Preserved movement, camera, spawn density, collisions, pickups, health, chaser behavior, scoring, effects, pause, restart, and difficulty systems.
+- Added conservative early rejection and scratch reuse in chaser avoidance, collision, snow overlap, spawn population, and spawn validation. Search order and accepted gameplay outcomes remain unchanged.
+- Fixed-step catch-up is capped at four updates after a delayed frame. This preserves short-stall recovery while preventing one hitch from causing an eight-update CPU burst.
+- Disabled the one-shot forced-cabin diagnostic by default; production runs use the authored weighted pattern library.
+
+## Migration progress
+
+- Phase 1 audit: complete.
+- Phase 2 render/listener consolidation: complete.
+- Phase 3 fixed-update and allocation cleanup: complete.
+- Phase 3.5 instrumentation: complete and opt-in. A real-device report remains pending; do not invent FPS numbers.
+- Production hardening: profiling defaults off, stable render callbacks/derived elements are in place, timer values bypass React state, and module TypeScript/ESLint checks pass.
+
+## Important implementation notes
+
+- Target is 60 FPS, but final FPS and memory numbers require a release/dev-client capture on target hardware. Static checks cannot certify device frame rate.
+- There is no tile board or rendered keyboard in this repository. Their required isolation rule is applied to the equivalent pooled world slots and touch controls: one entity change is slot-local, and touch handlers are stable callbacks backed by mutable input refs.
+- Music ask mode: this repository does not contain the referenced `src/components/Mosh-pit/` module or its MP3 bundle. No music files or fabricated sources were added. Add only user-provided/licensed tracks and explicit Metro `require(...)` registrations if that module is later introduced.
+- Profiling is for diagnosis only. Set `PERFORMANCE_PROFILING: true` temporarily, capture/dump, then restore `false`.
+
+---
+
+# Runtime stutter and cabin stabilization — 2026-07-30
+
+## Files added or modified
+
+No architecture files were added.
+
+| Area | Files modified |
+|------|----------------|
+| Documentation | `Readme.md` |
+| Engine/effects/types | `engine/GameEngine.ts`, `effects/SkiTrack.ts`, `types/SkiTrackTypes.ts` |
+| Spawn gameplay | `managers/SpawnPatterns.ts`, `utils/spawn-patterns.ts`, `utils/spawn-population.ts` |
+| Systems | `systems/SnowSurfaceSystem.ts` |
+| World renderers | `ui/WorldRenderer.tsx`, `ui/ObstacleRenderer.tsx`, `ui/EdgeTreeRenderer.tsx`, `ui/SnowSurfaceRenderer.tsx`, `ui/CoinRenderer.tsx`, `ui/ShieldPickupRenderer.tsx`, `ui/SpeedBoostRenderer.tsx`, `ui/SkiTrackRenderer.tsx`, `ui/PlayerRenderer.tsx`, `ui/ChaserRenderer.tsx`, `ui/ShieldBubbleRenderer.tsx`, `ui/CollisionBurstRenderer.tsx`, `ui/ShieldShatterRenderer.tsx`, `ui/GameplayFeedbackRenderer.tsx` |
+| Timer HUD | `ui/Hud.tsx`, `ui/ActiveEffectDurationHud.tsx` |
+| Stable-reference UI | `ui/MainMenu.tsx`, `ui/PauseOverlay.tsx`, `ui/GameOverOverlay.tsx`, `ui/ScoringGuideOverlay.tsx`, `ui/ScoringGuideRow.tsx` |
+| Debug utility | `utils/shield-rock-overlap-debug.tsx` |
+
+## Architectural changes
+
+- Preserved the existing engine, system, world-renderer, and memoized slot hierarchy exactly; no provider, store, screen, system, or rendering layer was added.
+- Static pooled world entities now retain camera-independent, world-local geometry. Each renderer updates one parent `translateX`/`translateY` transform as the camera moves instead of rewriting every visible slot's position on every display frame.
+- Obstacle, coin, shield, and speed-boost geometry is written only when a pool slot receives a new entity ID. Snow geometry is written only when that detail slot's immutable placement changes.
+- Decorative edge-tree geometry is written only when a pooled placement changes; camera motion no longer rewrites up to 128 tree rectangles per frame.
+- Ski-track segment geometry is rebuilt only when its preallocated point ring revision changes. Ordinary scrolling updates only the track layer transform.
+- JSX style combinations are module-stable or memoized, including pooled slots, particle effects, HUD, overlays, player/chaser art, and menus. No inline render style object or array remains in the ski-game module.
+- `GameEngine.dispose()` now clears all viewport and frame listeners after systems unmount, preventing retained callbacks across engine lifetimes.
+
+## Gameplay systems implemented
+
+- Cabins use the existing authored `cabin_avoidance` and `cabin_flank_weave` patterns and existing bundled cabin asset.
+- A cabin pattern is scheduled at population serial 1 and every 12 population groups thereafter, alternating between both authored formations. A required edge-pressure group may run first, but the cabin serial is retained for the next group.
+- Scheduled cabins are persistent across temporary capacity or placement failures. Cabin patterns roll back newly written requests when the cabin itself cannot be placed, so a partial pattern can no longer silently consume the cabin opportunity.
+- Snow decoration still avoids obstacle visuals, but the runtime detail-versus-obstacle scan now runs only when a new obstacle generation is activated. Initial placement continues to validate every new detail.
+- Movement, collisions, spawn validation, authored pattern geometry, pickups, scoring, difficulty, and effect durations remain unchanged.
+
+## Migration progress
+
+- World-local pooled rendering: complete for obstacles, snow details, coins, shield pickups, speed boosts, and both ski tracks.
+- Cabin availability and atomic request handling: complete.
+- Timer render isolation: complete; distance remains a SharedValue and is published only when its displayed integer changes. Effect bars remain SharedValue-driven and publish pixel-quantized widths.
+- Static TypeScript, ski-game ESLint, diff-integrity, and production Metro web export validation pass after this entry.
+- Real-device 60 FPS and memory capture remains pending; the target is not claimed as measured until tested on target hardware.
+
+## Important implementation notes
+
+- Pool slot React elements remain memoized with stable callbacks and stable shared objects. Entity motion and timers do not enter React state, so they do not rerender the screen tree.
+- Atlas animation stays at 12 FPS. Hidden coin, shield, and speed-boost slots now skip atlas crop calculations until visible.
+- Viewport culling remains active in screen coordinates even though stored geometry is world-local.
+- The cabin is no longer dependent on the one-shot debug-force flag or on an unusually late weighted RNG selection.
+
+---
+
+# Native render virtualization — 2026-07-30
+
+## Files added or modified
+
+No files or architectural layers were added.
+
+| Area | Files modified |
+|------|----------------|
+| Documentation | `Readme.md` |
+| Aggregated track rendering | `ui/SkiTrackRenderer.tsx` |
+| Visibility-driven pooled rendering | `ui/ObstacleRenderer.tsx`, `ui/SnowSurfaceRenderer.tsx`, `ui/CoinRenderer.tsx`, `ui/ShieldPickupRenderer.tsx`, `ui/SpeedBoostRenderer.tsx`, `ui/CollisionBurstRenderer.tsx`, `ui/ShieldShatterRenderer.tsx` |
+| Debug listener gating | `systems/CoinSystem.ts` |
+
+## Architectural changes
+
+- The public component/system hierarchy is unchanged. Pool-controller slots remain memoized children with stable callbacks and preallocated SharedValues.
+- A pooled slot now owns only its small React visibility/source state. Its native visual child and Reanimated worklets mount only when that exact slot becomes visible and unmount when it leaves the render margin. The renderer parent and sibling slots do not rerender.
+- Ski tracks now use one existing renderer with twelve aggregated `react-native-svg` paths. Both player/chaser rails are grouped into stable opacity bands and updated through string SharedValues only when the track point revision changes.
+- Camera motion between track samples uses one parent transform relative to the last path anchor; it does not rebuild SVG path data every display frame.
+
+## Gameplay systems implemented or preserved
+
+- Obstacle, snow, coin, shield, speed-boost, particle, collision, collection, and despawn pools retain their original capacities and simulation behavior.
+- Dual player/chaser ski rails, stroke width, segment overlap, rounded ends, and near-to-far fading are preserved. Twelve opacity bands replace per-segment native Views without changing gameplay.
+- Cabin scheduling, retry persistence, authored formations, collision geometry, and bundled cabin asset remain unchanged.
+- Collision and shield-shatter effects retain all pooled fragments. Only inactive/offscreen fragment views are absent from the native tree.
+
+## Migration progress
+
+- Ski-track native strokes: reduced from up to 188 permanently mounted animated Views to 12 aggregated SVG paths.
+- Collision/shatter fragments: changed from 128 permanently mounted animated Views to active-visible-only visual children.
+- Obstacles, snow details, coins, shields, and speed boosts: changed from capacity-sized permanent native visuals to active-visible-only visual children.
+- Disabled coin lifecycle debugging no longer registers a production frame callback.
+- TypeScript, ski-game ESLint, diff-integrity, and a fresh production Metro web export pass after this migration.
+
+## Important implementation notes
+
+- This approach targets UI-thread traversal, worklet count, image compositing, and memory directly. React memoization alone cannot remove the cost of hundreds of hidden native nodes.
+- Visibility changes use an individual slot setter and happen only at activation/culling boundaries. Continuous gameplay motion remains on SharedValues and does not rerender the screen tree.
+- The in-app browser controller was unavailable for an interactive local smoke test. Metro static rendering completed successfully, but native release/dev-client validation is still required.
+- Do not measure this work in Expo development mode with profiling enabled. Record the final device result from a release or dev-client build with `PERFORMANCE_PROFILING: false`.
+
+---
+
+# Residual frame-spike smoothing — 2026-07-30
+
+## Files added or modified
+
+No files or architectural layers were added.
+
+| Area | Files modified |
+|------|----------------|
+| Documentation/configuration | `README.md`, `utils/GameConfig.ts` |
+| Spawn validation | `utils/spawn-validation.ts` |
+| Track rendering | `ui/SkiTrackRenderer.tsx` |
+| Preload mount scheduling | `ui/ObstacleRenderer.tsx`, `ui/SnowSurfaceRenderer.tsx` |
+| Collision particles | `effects/CollisionBurst.ts`, `ui/CollisionBurstRenderer.tsx` |
+| Shield-shatter particles | `effects/ShieldShatter.ts`, `ui/ShieldShatterRenderer.tsx` |
+
+## Architectural changes
+
+- Preserved the existing engine, system, renderer, and memoized pool-slot hierarchy. No provider, store, manager, system, or component layer was introduced.
+- Obstacle and snow renderers now admit at most one newly visible native visual subtree per renderer per display frame. Unmounts remain immediate, and existing visible slots continue updating without a React render.
+- The off-screen render margins act as a preload window, allowing multi-object formations to mount over successive frames before reaching the visible viewport.
+- The normal maximum collision burst (12 fragments) and shield shatter (14 fragments) now stay warm as transparent native nodes. Higher pooled capacity remains visibility-virtualized.
+- Ski-track camera/scroll motion remains display-frame driven through the parent transform, while expensive SVG path-string rebuild and transfer is capped at 20 Hz.
+
+## Gameplay systems implemented or preserved
+
+- Spawn order, obstacle/pickup positions, cabin scheduling, collision geometry, pool capacities, effect fragment counts, particle motion, and effect lifetimes are unchanged.
+- Cabin visuals use the same preload budget as other obstacles and are logged as rendered only after their visual subtree has been admitted.
+- Spawn-pattern occupancy retries now write into a module scratch footprint instead of allocating a retained object per retry. The public footprint API still returns an independent copy.
+- Track sampling, dual rails, fade bands, collision behavior, scoring, difficulty, and timers are unchanged.
+
+## Migration progress
+
+- Sustained native-view reduction: complete.
+- Residual boundary/event spike smoothing: complete for obstacle formations, snow details, normal collision bursts, shield shatters, track path refreshes, and spawn-pattern footprint retries.
+- TypeScript, ski-game ESLint, diff-integrity, and a fresh production Metro web export pass after this entry.
+- Final release-device frame pacing and memory capture remain pending.
+
+## Important implementation notes
+
+- `VISUAL_PRELOAD_MOUNTS_PER_RENDERER_FRAME` is intentionally `1`; with the existing render margins, even the largest four-obstacle authored pattern is preloaded before it enters the viewport at maximum configured scroll speed.
+- `SKI_TRACK_PATH_SYNC_INTERVAL_MS` affects only immutable SVG path-data refresh. The entire trail still translates every display frame, so scrolling remains smooth between geometry refreshes.
+- Warm particle slots remove React/native mounting from the common collision frame while retaining virtualization for overlapping effects beyond the authored per-event maximum.
+- Timer values and continuous world motion remain outside React state and do not rerender the screen tree.

@@ -99,6 +99,16 @@ export function enqueueSpawnPatternRequests(
 ): number {
   const { laneCount, laneWidth, playableOriginX, requests } = spawnState;
   const obstacles = pattern.obstacles;
+  const initialPendingCount = spawnState.pendingCount;
+  const initialNextRequestId = spawnState.nextRequestId;
+  let cabinRequired = false;
+  for (let index = 0; index < obstacles.length; index += 1) {
+    if (obstacles[index].variant === 'cabin') {
+      cabinRequired = true;
+      break;
+    }
+  }
+  let cabinWritten = false;
   let written = 0;
   let patternAcceptedCount = 0;
   const maxAttempts = GAME_CONFIG.MAX_OBSTACLE_PLACEMENT_ATTEMPTS;
@@ -163,6 +173,7 @@ export function enqueueSpawnPatternRequests(
       variant: entry.variant,
     });
     if (entry.variant === 'cabin') {
+      cabinWritten = true;
       logCabinSpawnRequestCreated();
     }
     spawnState.nextRequestId += 1;
@@ -174,6 +185,19 @@ export function enqueueSpawnPatternRequests(
       entry.variant,
       patternAcceptedCount,
     );
+  }
+
+  if (cabinRequired && !cabinWritten) {
+    for (
+      let requestIndex = initialPendingCount;
+      requestIndex < spawnState.pendingCount;
+      requestIndex += 1
+    ) {
+      requests[requestIndex].active = false;
+    }
+    spawnState.pendingCount = initialPendingCount;
+    spawnState.nextRequestId = initialNextRequestId;
+    return 0;
   }
 
   return written;

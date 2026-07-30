@@ -55,7 +55,7 @@ export const WorldRenderer = memo(function WorldRenderer({ viewport }: WorldRend
   );
 
   useEffect(() => {
-    return engine.onFrame(() => {
+    return engine.onPlayingFrame(() => {
       scrollY.value = engine.worldRef.current.scrollOffsetY;
       cameraOffsetX.value = engine.cameraRef.current.offsetX;
     });
@@ -72,11 +72,19 @@ export const WorldRenderer = memo(function WorldRenderer({ viewport }: WorldRend
       transform: [{ translateY: -wrappedOffset }],
     };
   }, [viewport.height]);
+  const cameraCompositeStyle = useMemo(
+    () => [worldLayerStyle.cameraLayer, animatedCameraStyle],
+    [animatedCameraStyle],
+  );
+  const stripCompositeStyle = useMemo(
+    () => [stripLayoutStyle, animatedScrollStyle],
+    [animatedScrollStyle, stripLayoutStyle],
+  );
 
   return (
     <View style={worldLayerStyle.root} pointerEvents="none">
-      <Animated.View style={[worldLayerStyle.cameraLayer, animatedCameraStyle]}>
-        <Animated.View style={[stripLayoutStyle, animatedScrollStyle]}>
+      <Animated.View style={cameraCompositeStyle}>
+        <Animated.View style={stripCompositeStyle}>
           <View style={tileStyle} />
           <View style={tileStyle} />
         </Animated.View>

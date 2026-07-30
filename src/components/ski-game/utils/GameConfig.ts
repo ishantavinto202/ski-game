@@ -72,6 +72,35 @@ export const GAME_CONFIG = {
   FIXED_TIMESTEP: 1000 / 60,
 
   /**
+   * Phase 3.5 runtime profiler. When false, all profiling hooks no-op.
+   * Overlay mounts only when this is true AND `__DEV__`. Never enable for production builds.
+   */
+  PERFORMANCE_PROFILING: false,
+
+  /**
+   * Bottleneck isolation (only when PERFORMANCE_PROFILING is true).
+   * All `true` = baseline. Flip ONE to `false`, play ~10s, read overlay FPS.
+   * Recover to ≥~55 FPS → that feature is the bottleneck. Else re-enable and try the next.
+   *
+   * Order: ObstacleRenderer → SnowRenderer → SkiTrack → Particles → Coins →
+   * Chaser → Spawn → HUD → Camera → Shadows → Animation
+   */
+  PERF_ISOLATION: {
+    OBSTACLE_RENDERER: true,
+    SNOW_RENDERER: true,
+    SKI_TRACK: true,
+    PARTICLES: true,
+    COINS: true,
+    CHASER: true,
+    SPAWN: true,
+    HUD: true,
+    CAMERA: true,
+    /** No shadow system in this game — reserved no-op for the isolation flowchart. */
+    SHADOWS: true,
+    ANIMATION: true,
+  },
+
+  /**
    * Share of viewport height above the player used for look-ahead / upstream spawning helpers.
    * World scroll remains top → bottom; larger values reserve more space above the skier.
    */
@@ -133,6 +162,12 @@ export const GAME_CONFIG = {
   OBSTACLE_DESPAWN_MARGIN: 48,
   /** Extra px around viewport when culling obstacle placeholders. */
   OBSTACLE_RENDER_MARGIN: 64,
+  /**
+   * Maximum newly visible native visual subtrees mounted by one pooled renderer
+   * per display frame. The render margins provide enough off-screen lead to
+   * stagger a formation without changing its visible timing or gameplay state.
+   */
+  VISUAL_PRELOAD_MOUNTS_PER_RENDERER_FRAME: 1,
   /** Inset (px) applied to player AABB for hit tests. */
   PLAYER_COLLISION_PADDING: 4,
   /** Inset (px) applied to obstacle AABB for hit tests. */
@@ -222,6 +257,12 @@ export const GAME_CONFIG = {
   SKI_TRACK_OPACITY_FAR: 0.15,
   SKI_TRACK_SEGMENT_OVERLAP: 2,
   SKI_TRACK_RENDER_MARGIN: 48,
+  /**
+   * SVG geometry refresh cadence. The whole track layer still follows camera
+   * and scroll every display frame; only immutable path-string rebuilding is
+   * capped to avoid periodic JS/UI string-transfer spikes.
+   */
+  SKI_TRACK_PATH_SYNC_INTERVAL_MS: 50,
 
   /** Maximum pooled coins alive at once. */
   MAX_COINS: 24,
@@ -317,3 +358,32 @@ export const GAME_CONFIG = {
 } as const;
 
 export type GameConfig = typeof GAME_CONFIG;
+
+export type PerfIsolationFeature = keyof typeof GAME_CONFIG.PERF_ISOLATION;
+
+/**
+ * Isolation gate: `false` means skip that feature for the bottleneck hunt.
+ * Always `true` when PERFORMANCE_PROFILING is off so production paths stay intact.
+ */
+export function perfFeatureEnabled(feature: PerfIsolationFeature): boolean {
+  if (!GAME_CONFIG.PERFORMANCE_PROFILING) {
+    return true;
+  }
+  // Widen literal `true` from `as const` so isolation `false` branches stay reachable.
+  return Boolean(GAME_CONFIG.PERF_ISOLATION[feature]);
+}
+
+/** Features currently flipped off (for overlay). Empty when profiling is off. */
+export function listDisabledPerfIsolationFeatures(): PerfIsolationFeature[] {
+  if (!GAME_CONFIG.PERFORMANCE_PROFILING) {
+    return [];
+  }
+  const disabled: PerfIsolationFeature[] = [];
+  const flags = GAME_CONFIG.PERF_ISOLATION;
+  for (const key of Object.keys(flags) as PerfIsolationFeature[]) {
+    if (!Boolean(flags[key])) {
+      disabled.push(key);
+    }
+  }
+  return disabled;
+}

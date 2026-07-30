@@ -4,6 +4,10 @@ import {
   findInactiveSnowSurfaceSlot,
 } from '../entities/SnowSurface';
 import type { GameEngine } from '../engine/GameEngine';
+import {
+  profileSnowOverlap,
+  profileSnowPlacementAttempt,
+} from '../profiling/PerformanceProfiling';
 import type { GameSystem } from '../types';
 import type { ObstaclePoolState, ObstacleRecord } from '../types/ObstacleTypes';
 import type { SnowSurfacePoolState, SnowSurfaceTypeIndex } from '../types/SnowSurfaceTypes';
@@ -80,11 +84,15 @@ function snowDetailOverlapsObstacleVisual(
   obstacle: ObstacleRecord,
   padding: number,
 ): boolean {
-  const halfW = (width + obstacle.width) * 0.5 + padding;
+  profileSnowOverlap();
   const halfH = (height + obstacle.height) * 0.5 + padding;
-  const deltaX = worldX - obstacle.worldX;
   const deltaY = worldY - obstacle.worldY;
-  return deltaX < halfW && deltaX > -halfW && deltaY < halfH && deltaY > -halfH;
+  if (deltaY >= halfH || deltaY <= -halfH) {
+    return false;
+  }
+  const halfW = (width + obstacle.width) * 0.5 + padding;
+  const deltaX = worldX - obstacle.worldX;
+  return deltaX < halfW && deltaX > -halfW;
 }
 
 function snowDetailOverlapsAnyObstacle(
@@ -142,6 +150,7 @@ function spawnOneAtCursor(engine: GameEngine, pool: SnowSurfacePoolState): void 
   const maxAttempts = GAME_CONFIG.SNOW_SURFACE_MAX_PLACEMENT_ATTEMPTS;
 
   for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+    profileSnowPlacementAttempt(attempt > 0);
     const worldX = pickWorldCenterX(pool, viewport.width, width);
     if (snowDetailOverlapsAnyObstacle(worldX, worldY, width, height, obstaclePool, padding)) {
       continue;
@@ -212,13 +221,16 @@ export class SnowSurfaceSystem implements GameSystem {
   readonly id = SNOW_SURFACE_SYSTEM_ID;
 
   private engine: GameEngine | null = null;
+  private lastObservedNextObstacleId = -1;
 
   mount(engine: GameEngine): void {
     this.engine = engine;
+    this.lastObservedNextObstacleId = -1;
   }
 
   unmount(): void {
     this.engine = null;
+    this.lastObservedNextObstacleId = -1;
   }
 
   fixedUpdate(_fixedDeltaMs: number): void {
@@ -237,8 +249,12 @@ export class SnowSurfaceSystem implements GameSystem {
     const pool = engine.snowSurfaceRef.current;
     const obstaclePool = engine.obstacleRef.current;
 
-    // After ObstacleSystem: cull only details meaningfully under a new obstacle.
-    deactivateSnowDetailsOverlappingObstacles(pool, obstaclePool);
+    // The overlap relationship only changes when an obstacle generation is added.
+    // Avoid the full detail × obstacle scan on fixed steps with an unchanged pool.
+    if (this.lastObservedNextObstacleId !== obstaclePool.nextObstacleId) {
+      deactivateSnowDetailsOverlappingObstacles(pool, obstaclePool);
+      this.lastObservedNextObstacleId = obstaclePool.nextObstacleId;
+    }
 
     maintainSnowSurfaceAhead(engine, pool);
 

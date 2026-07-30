@@ -5,7 +5,7 @@ import { worldYCenterToScreenY } from '../utils/world-coordinates';
 export const MAX_SHIELD_SHATTER_PARTICLES = 64;
 
 const SHATTER_FRAGMENT_COUNT_MIN = 10;
-const SHATTER_FRAGMENT_COUNT_MAX = 14;
+export const SHIELD_SHATTER_FRAGMENT_COUNT_MAX = 14;
 
 const SHATTER_LIFE_MIN_MS = 300;
 const SHATTER_LIFE_MAX_MS = 400;
@@ -156,7 +156,10 @@ function spawnShieldShatterAtPlayer(engine: GameEngine, pool: ShieldShatterPoolS
     return;
   }
 
-  const fragmentCount = randomInt(SHATTER_FRAGMENT_COUNT_MIN, SHATTER_FRAGMENT_COUNT_MAX);
+  const fragmentCount = randomInt(
+    SHATTER_FRAGMENT_COUNT_MIN,
+    SHIELD_SHATTER_FRAGMENT_COUNT_MAX,
+  );
   for (let index = 0; index < fragmentCount; index += 1) {
     spawnShatterFragment(pool, origin.worldX, origin.worldY);
   }

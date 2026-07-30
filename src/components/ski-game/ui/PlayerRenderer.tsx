@@ -4,7 +4,7 @@ import Animated, { useAnimatedStyle, useSharedValue } from 'react-native-reanima
 
 import type { PlayerSnapshot } from '../entities/Player';
 import { useGameEngineContext } from '../engine/GameEngineContext';
-import { GAME_CONFIG } from '../utils/GameConfig';
+import { GAME_CONFIG, perfFeatureEnabled } from '../utils/GameConfig';
 import {
   PLAYER_ATLAS,
   PLAYER_ATLAS_TEXTURE,
@@ -105,10 +105,12 @@ export const PlayerRenderer = memo(function PlayerRenderer({ player }: PlayerRen
       );
     }
     leanAngle.value = engine.playerFeelRef.current.leanAngle;
-    animFrameIndex.value =
-      Math.floor(engine.timeRef.current.elapsedMs / PLAYER_FRAME_MS) % PLAYER_SPRITE_FRAME_COUNT;
+    if (perfFeatureEnabled('ANIMATION')) {
+      animFrameIndex.value =
+        Math.floor(engine.timeRef.current.elapsedMs / PLAYER_FRAME_MS) % PLAYER_SPRITE_FRAME_COUNT;
+    }
 
-    return engine.onFrame(() => {
+    return engine.onPlayingFrame(() => {
       const currentPlayer = engine.playerRef.current;
       if (!currentPlayer) {
         bodyOpacity.value = 0;
@@ -119,8 +121,10 @@ export const PlayerRenderer = memo(function PlayerRenderer({ player }: PlayerRen
       leanAngle.value = engine.playerFeelRef.current.leanAngle;
 
       // elapsedMs only advances during `playing` fixed steps — pause / game over freeze the frame.
-      animFrameIndex.value =
-        Math.floor(engine.timeRef.current.elapsedMs / PLAYER_FRAME_MS) % PLAYER_SPRITE_FRAME_COUNT;
+      if (perfFeatureEnabled('ANIMATION')) {
+        animFrameIndex.value =
+          Math.floor(engine.timeRef.current.elapsedMs / PLAYER_FRAME_MS) % PLAYER_SPRITE_FRAME_COUNT;
+      }
 
       const health = engine.healthRef.current;
       bodyOpacity.value = resolveInvulnerabilityBlinkOpacity(
@@ -159,22 +163,34 @@ export const PlayerRenderer = memo(function PlayerRenderer({ player }: PlayerRen
     left: playerX.value,
     opacity: bodyOpacity.value > 0 ? 1 : 0,
   }));
+  const clipCompositeStyle = useMemo(
+    () => [playerStyles.clip, staticClipStyle, animatedClipStyle],
+    [animatedClipStyle, staticClipStyle],
+  );
+  const atlasCompositeStyle = useMemo(
+    () => [playerStyles.atlasImage, animatedAtlasStyle],
+    [animatedAtlasStyle],
+  );
+  const debugCompositeStyle = useMemo(
+    () => [playerStyles.debugHitbox, debugHitboxStyle, animatedDebugStyle],
+    [animatedDebugStyle, debugHitboxStyle],
+  );
 
   return (
     <>
       <Animated.View
-        style={[playerStyles.clip, staticClipStyle, animatedClipStyle]}
+        style={clipCompositeStyle}
         pointerEvents="none"
       >
         <AnimatedImage
           source={PLAYER_ATLAS_TEXTURE}
-          style={[playerStyles.atlasImage, animatedAtlasStyle]}
+          style={atlasCompositeStyle}
           resizeMode="stretch"
         />
       </Animated.View>
       {DEBUG_PLAYER_HITBOX && debugHitboxStyle ? (
         <Animated.View
-          style={[playerStyles.debugHitbox, debugHitboxStyle, animatedDebugStyle]}
+          style={debugCompositeStyle}
           pointerEvents="none"
         />
       ) : null}

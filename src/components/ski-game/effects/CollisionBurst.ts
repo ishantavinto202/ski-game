@@ -5,7 +5,7 @@ import { worldYCenterToScreenY } from '../utils/world-coordinates';
 export const MAX_COLLISION_BURST_PARTICLES = 64;
 
 const BURST_FRAGMENT_COUNT_MIN = 8;
-const BURST_FRAGMENT_COUNT_MAX = 12;
+export const COLLISION_BURST_FRAGMENT_COUNT_MAX = 12;
 
 const BURST_LIFE_MIN_MS = 250;
 const BURST_LIFE_MAX_MS = 350;
@@ -155,7 +155,10 @@ function spawnCollisionBurstAtImpact(engine: GameEngine, pool: CollisionBurstPoo
     return;
   }
 
-  const fragmentCount = randomInt(BURST_FRAGMENT_COUNT_MIN, BURST_FRAGMENT_COUNT_MAX);
+  const fragmentCount = randomInt(
+    BURST_FRAGMENT_COUNT_MIN,
+    COLLISION_BURST_FRAGMENT_COUNT_MAX,
+  );
   for (let index = 0; index < fragmentCount; index += 1) {
     spawnBurstFragment(pool, origin.worldX, origin.worldY);
   }

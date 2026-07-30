@@ -2,10 +2,7 @@ import type { GameEngine } from '../engine/GameEngine';
 import { resetHealthState } from '../types/HealthTypes';
 import type { GameSystem } from '../types';
 import { GAME_CONFIG } from '../utils/GameConfig';
-import {
-  spawnGameplayFeedbackForCoinCollect,
-  spawnGameplayFeedbackForConsequence,
-} from '../effects/GameplayFeedback';
+import { spawnGameplayFeedbackForConsequence } from '../effects/GameplayFeedback';
 import { applyScoreDelta, resolveObstacleConsequence } from '../utils/score-consequences';
 
 export const HEALTH_SYSTEM_ID = 'health-system';

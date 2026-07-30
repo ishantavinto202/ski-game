@@ -23,6 +23,7 @@ import {
   logCoinSystemReceivedRequest,
 } from '../utils/coin-scheduling-debug';
 import {
+  COIN_ACTIVE_LIFECYCLE_DEBUG_ENABLED,
   registerCoinActivatedForLifecycleDebug,
   resetCoinActiveLifecycleDebug,
   tickCoinActiveLifecycleDebug,
@@ -45,9 +46,11 @@ export class CoinSystem implements GameSystem {
     this.engine = engine;
     engine.coinRef.current = createCoinPoolState();
     resetCoinActiveLifecycleDebug();
-    this.removeFrameListener = engine.onFrame(() => {
-      tickCoinActiveLifecycleDebug(engine);
-    });
+    if (COIN_ACTIVE_LIFECYCLE_DEBUG_ENABLED) {
+      this.removeFrameListener = engine.onPlayingFrame(() => {
+        tickCoinActiveLifecycleDebug(engine);
+      });
+    }
   }
 
   unmount(): void {

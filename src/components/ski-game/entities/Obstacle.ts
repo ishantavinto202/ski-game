@@ -1,4 +1,5 @@
 import { GAME_CONFIG } from '../utils/GameConfig';
+import { profileObstacleSpawn } from '../profiling/PerformanceProfiling';
 
 import {
   OBSTACLE_VARIANT_DIMENSIONS,
@@ -87,6 +88,7 @@ export function activateObstacleFromSpawn(
   slot.active = true;
 
   pool.activeCount += 1;
+  profileObstacleSpawn();
 }
 
 export function deactivateObstacle(slot: ObstacleRecord, pool: ObstaclePoolState): void {
@@ -113,7 +115,6 @@ export function pickWeightedObstacleVariant(
     TREE_SPAWN_WEIGHT,
     TREE_STUMP_SPAWN_WEIGHT,
     CABIN_SPAWN_WEIGHT,
-    WOODEN_FENCE_SPAWN_WEIGHT,
   } = GAME_CONFIG;
 
   pool.rngState = (pool.rngState * 1664525 + 1013904223) >>> 0;

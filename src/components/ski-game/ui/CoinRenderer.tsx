@@ -1,13 +1,18 @@
-import { memo, useEffect, useMemo } from 'react';
-import { Image, StyleSheet, View } from 'react-native';
-import Animated, { useAnimatedStyle, useSharedValue, type SharedValue } from 'react-native-reanimated';
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Image, StyleSheet, type ViewStyle } from 'react-native';
+import Animated, {
+  makeMutable,
+  useAnimatedStyle,
+  useSharedValue,
+  type SharedValue,
+} from 'react-native-reanimated';
 
 import type { ViewportSize } from '../engine/GameEngine';
 import { useGameEngineContext } from '../engine/GameEngineContext';
 import { COIN_WORLD_SIZE } from '../types/CoinTypes';
 import { getCoinRenderMargin } from '../utils/coin-render';
 import { GAME_CONFIG } from '../utils/GameConfig';
-import { worldYCenterToScreenY } from '../utils/world-coordinates';
+import { writeSharedNumber } from '../utils/shared-value-write';
 
 import coinAtlasMetadata from '../../../../assets/assets/Coin Animations/texture.json';
 
@@ -15,6 +20,7 @@ const COIN_ATLAS_TEXTURE = require('../../../../assets/assets/Coin Animations/te
 
 const COIN_ANIMATION_FPS = 12;
 const COIN_FRAME_MS = 1000 / COIN_ANIMATION_FPS;
+const MAX_COINS = GAME_CONFIG.MAX_COINS;
 
 type TexturePackerFrameEntry = {
   frame: { x: number; y: number; w: number; h: number };
@@ -88,77 +94,49 @@ const layerStyle = StyleSheet.create({
 });
 
 const COIN_SLOT_INDICES: number[] = [];
-for (let index = 0; index < GAME_CONFIG.MAX_COINS; index += 1) {
+for (let index = 0; index < MAX_COINS; index += 1) {
   COIN_SLOT_INDICES.push(index);
 }
 
-type CoinRenderSlotProps = {
-  slotIndex: number;
-  viewport: ViewportSize;
+type CoinSlotShared = {
+  left: SharedValue<number>;
+  top: SharedValue<number>;
+  size: SharedValue<number>;
+  opacity: SharedValue<number>;
+};
+
+function createCoinSlotShared(): CoinSlotShared {
+  return {
+    left: makeMutable(0),
+    top: makeMutable(0),
+    size: makeMutable(COIN_WORLD_SIZE.width),
+    opacity: makeMutable(0),
+  };
+}
+
+type CoinVisualProps = {
+  shared: CoinSlotShared;
   animFrameIndex: SharedValue<number>;
 };
 
-const CoinRenderSlot = memo(function CoinRenderSlot({
-  slotIndex,
-  viewport,
+const CoinVisual = memo(function CoinVisual({
+  shared,
   animFrameIndex,
-}: CoinRenderSlotProps) {
-  const engine = useGameEngineContext();
-  const left = useSharedValue(0);
-  const top = useSharedValue(0);
-  const size = useSharedValue<number>(COIN_WORLD_SIZE.width);
-  const opacity = useSharedValue(0);
-
+}: CoinVisualProps) {
   const clipStyle = useMemo(() => layerStyle.clip, []);
   const atlasImageStyle = useMemo(() => layerStyle.atlasImage, []);
 
-  useEffect(() => {
-    const margin = getCoinRenderMargin();
-
-    return engine.onFrame(() => {
-      const coin = engine.coinRef.current.coins[slotIndex];
-      if (!coin.active) {
-        if (opacity.value !== 0) {
-          opacity.value = 0;
-        }
-        return;
-      }
-
-      const scrollOffsetY = engine.worldRef.current.scrollOffsetY;
-      const cameraOffsetX = engine.cameraRef.current.offsetX;
-      const rectLeft = coin.worldX - coin.width * 0.5 - cameraOffsetX;
-      const rectTop = worldYCenterToScreenY(scrollOffsetY, coin.worldY) - coin.height * 0.5;
-
-      if (
-        rectLeft + coin.width < -margin ||
-        rectLeft > viewport.width + margin ||
-        rectTop + coin.height < -margin ||
-        rectTop > viewport.height + margin
-      ) {
-        if (opacity.value !== 0) {
-          opacity.value = 0;
-        }
-        return;
-      }
-
-      left.value = rectLeft;
-      top.value = rectTop;
-      size.value = coin.width;
-      opacity.value = 1;
-    });
-  }, [engine, left, opacity, size, slotIndex, top, viewport]);
-
   const animatedClipStyle = useAnimatedStyle(() => ({
-    left: left.value,
-    top: top.value,
-    width: size.value,
-    height: size.value,
-    opacity: opacity.value,
+    left: shared.left.value,
+    top: shared.top.value,
+    width: shared.size.value,
+    height: shared.size.value,
+    opacity: shared.opacity.value,
   }));
 
   const animatedAtlasStyle = useAnimatedStyle(() => {
-    const displaySize = size.value;
-    if (displaySize <= 0) {
+    const displaySize = shared.size.value;
+    if (shared.opacity.value <= 0 || displaySize <= 0) {
       return {
         width: 0,
         height: 0,
@@ -184,16 +162,52 @@ const CoinRenderSlot = memo(function CoinRenderSlot({
       top: -cropY,
     };
   });
+  const clipCompositeStyle = useMemo(
+    () => [clipStyle, animatedClipStyle],
+    [animatedClipStyle, clipStyle],
+  );
+  const atlasCompositeStyle = useMemo(
+    () => [atlasImageStyle, animatedAtlasStyle],
+    [animatedAtlasStyle, atlasImageStyle],
+  );
 
   return (
-    <Animated.View style={[clipStyle, animatedClipStyle]} pointerEvents="none">
+    <Animated.View style={clipCompositeStyle} pointerEvents="none">
       <AnimatedImage
         source={COIN_ATLAS_TEXTURE}
-        style={[atlasImageStyle, animatedAtlasStyle]}
+        style={atlasCompositeStyle}
         resizeMode="stretch"
       />
     </Animated.View>
   );
+});
+
+type CoinRenderSlotProps = CoinVisualProps & {
+  slotIndex: number;
+  registerVisibilitySetter: (
+    slotIndex: number,
+    setter: ((visible: boolean) => void) | null,
+  ) => void;
+};
+
+const CoinRenderSlot = memo(function CoinRenderSlot({
+  slotIndex,
+  shared,
+  animFrameIndex,
+  registerVisibilitySetter,
+}: CoinRenderSlotProps) {
+  const [visible, setVisible] = useState(false);
+
+  useEffect(() => {
+    registerVisibilitySetter(slotIndex, setVisible);
+    return () => {
+      registerVisibilitySetter(slotIndex, null);
+    };
+  }, [registerVisibilitySetter, slotIndex]);
+
+  return visible ? (
+    <CoinVisual shared={shared} animFrameIndex={animFrameIndex} />
+  ) : null;
 });
 
 type CoinRendererProps = {
@@ -203,24 +217,139 @@ type CoinRendererProps = {
 export const CoinRenderer = memo(function CoinRenderer({ viewport }: CoinRendererProps) {
   const engine = useGameEngineContext();
   const animFrameIndex = useSharedValue(0);
+  const cameraOffsetX = useSharedValue(0);
+  const scrollOffsetY = useSharedValue(0);
+
+  const slots = useMemo(() => {
+    const list: CoinSlotShared[] = new Array(MAX_COINS);
+    for (let index = 0; index < MAX_COINS; index += 1) {
+      list[index] = createCoinSlotShared();
+    }
+    return list;
+  }, []);
+  const lastCoinIdRef = useRef(new Int32Array(MAX_COINS));
+  const visibilitySettersRef = useRef<
+    (((visible: boolean) => void) | null)[]
+  >(new Array(MAX_COINS).fill(null));
+  const visibleSlotsRef = useRef(new Uint8Array(MAX_COINS));
+
+  const registerVisibilitySetter = useCallback(
+    (
+      slotIndex: number,
+      setter: ((visible: boolean) => void) | null,
+    ) => {
+      visibilitySettersRef.current[slotIndex] = setter;
+      setter?.(visibleSlotsRef.current[slotIndex] === 1);
+    },
+    [],
+  );
 
   useEffect(() => {
-    return engine.onFrame(() => {
+    const margin = getCoinRenderMargin();
+    const visibleSlots = visibleSlotsRef.current;
+    const setSlotVisible = (slotIndex: number, visible: boolean): void => {
+      const nextValue = visible ? 1 : 0;
+      if (visibleSlots[slotIndex] === nextValue) {
+        return;
+      }
+      visibleSlots[slotIndex] = nextValue;
+      visibilitySettersRef.current[slotIndex]?.(visible);
+    };
+
+    return engine.onPlayingFrame(() => {
       const elapsedMs = engine.timeRef.current.elapsedMs;
-      animFrameIndex.value = Math.floor(elapsedMs / COIN_FRAME_MS) % COIN_FRAME_COUNT;
+      writeSharedNumber(
+        animFrameIndex,
+        Math.floor(elapsedMs / COIN_FRAME_MS) % COIN_FRAME_COUNT,
+      );
+
+      const coins = engine.coinRef.current.coins;
+      const nextScrollOffsetY = engine.worldRef.current.scrollOffsetY;
+      const nextCameraOffsetX = engine.cameraRef.current.offsetX;
+      const viewportWidth = viewport.width;
+      const viewportHeight = viewport.height;
+      const lastCoinId = lastCoinIdRef.current;
+      writeSharedNumber(scrollOffsetY, nextScrollOffsetY);
+      writeSharedNumber(cameraOffsetX, nextCameraOffsetX);
+
+      for (let slotIndex = 0; slotIndex < MAX_COINS; slotIndex += 1) {
+        const slot = slots[slotIndex];
+        const coin = coins[slotIndex];
+
+        if (!coin.active) {
+          lastCoinId[slotIndex] = 0;
+          setSlotVisible(slotIndex, false);
+          writeSharedNumber(slot.opacity, 0);
+          continue;
+        }
+
+        const localLeft = coin.worldX - coin.width * 0.5;
+        const localTop = -coin.worldY - coin.height * 0.5;
+        const screenLeft = localLeft - nextCameraOffsetX;
+        const screenTop = localTop + nextScrollOffsetY;
+
+        if (
+          screenLeft + coin.width < -margin ||
+          screenLeft > viewportWidth + margin ||
+          screenTop + coin.height < -margin ||
+          screenTop > viewportHeight + margin
+        ) {
+          setSlotVisible(slotIndex, false);
+          writeSharedNumber(slot.opacity, 0);
+          continue;
+        }
+
+        if (lastCoinId[slotIndex] !== coin.id) {
+          lastCoinId[slotIndex] = coin.id;
+          writeSharedNumber(slot.left, localLeft);
+          writeSharedNumber(slot.top, localTop);
+          writeSharedNumber(slot.size, coin.width);
+        }
+        writeSharedNumber(slot.opacity, 1);
+        setSlotVisible(slotIndex, true);
+      }
     });
-  }, [animFrameIndex, engine]);
+  }, [
+    animFrameIndex,
+    cameraOffsetX,
+    engine,
+    scrollOffsetY,
+    slots,
+    viewport.height,
+    viewport.width,
+  ]);
+
+  const layerTransformStyle = useAnimatedStyle<ViewStyle>(() => ({
+    transform: [
+      { translateX: -cameraOffsetX.value },
+      { translateY: scrollOffsetY.value },
+    ] as ViewStyle['transform'],
+  }));
+  const animatedLayerStyle = useMemo(
+    () => [layerStyle.root, layerTransformStyle],
+    [layerTransformStyle],
+  );
+
+  const renderSlot = useCallback(
+    (slotIndex: number) => (
+      <CoinRenderSlot
+        key={slotIndex}
+        slotIndex={slotIndex}
+        shared={slots[slotIndex]}
+        animFrameIndex={animFrameIndex}
+        registerVisibilitySetter={registerVisibilitySetter}
+      />
+    ),
+    [animFrameIndex, registerVisibilitySetter, slots],
+  );
+  const slotElements = useMemo(() => COIN_SLOT_INDICES.map(renderSlot), [renderSlot]);
 
   return (
-    <View style={layerStyle.root} pointerEvents="none">
-      {COIN_SLOT_INDICES.map((slotIndex) => (
-        <CoinRenderSlot
-          key={slotIndex}
-          slotIndex={slotIndex}
-          viewport={viewport}
-          animFrameIndex={animFrameIndex}
-        />
-      ))}
-    </View>
+    <Animated.View
+      style={animatedLayerStyle}
+      pointerEvents="none"
+    >
+      {slotElements}
+    </Animated.View>
   );
 });

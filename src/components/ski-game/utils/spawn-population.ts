@@ -1,5 +1,9 @@
 import type { GameEngine } from '../engine/GameEngine';
-import { SPAWN_PATTERN_LIBRARY } from '../managers/SpawnPatterns';
+import {
+  CABIN_AVOIDANCE_PATTERN,
+  CABIN_FLANK_WEAVE_PATTERN,
+  SPAWN_PATTERN_LIBRARY,
+} from '../managers/SpawnPatterns';
 import { OBSTACLE_VARIANT_DIMENSIONS } from '../types/ObstacleTypes';
 import type { SpawnPattern } from '../types/SpawnPatternTypes';
 import type { SpawnManagerState } from '../types/SpawnTypes';
@@ -9,7 +13,7 @@ import {
   pickWeightedSpawnPattern,
   randomIntInclusive,
 } from './spawn-patterns';
-import { pickForcedCabinPatternIfPending, resetDebugForceCabinState } from './spawn-debug';
+import { resetDebugForceCabinState } from './spawn-debug';
 import {
   logCabinEnqueued,
   logCabinPatternSelected,
@@ -25,6 +29,7 @@ import {
 
 const SINGLE_ROCK_PATTERN = SPAWN_PATTERN_LIBRARY[0];
 const SAFE_PATTERN_EVERY = 4;
+const CABIN_PATTERN_EVERY = 12;
 const MAX_PATTERN_SELECTION_ATTEMPTS = 5;
 const HORIZONTAL_BAND_COUNT = 5;
 const MAX_EDGE_OPEN_GROUP_COUNTER = 255;
@@ -379,6 +384,12 @@ function resolveNonOverlappingOriginY(
   return originY;
 }
 
+const spawnLayoutScratch = {
+  laneCount: 0,
+  laneWidth: 0,
+  playableOriginX: 0,
+};
+
 function appendSequentialPopulationPattern(
   engine: GameEngine,
   spawnState: SpawnManagerState,
@@ -391,6 +402,8 @@ function appendSequentialPopulationPattern(
   const serial = spawnState.populationPatternSerial;
   spawnState.populationPatternSerial = serial + 1;
   const isSafePatternSlot = serial % SAFE_PATTERN_EVERY === SAFE_PATTERN_EVERY - 1;
+  const isCabinPatternSlot =
+    serial % CABIN_PATTERN_EVERY === 1 && !isSafePatternSlot;
   const edgePressureTarget = resolveEdgePressureTarget(
     spawnState,
     engine.difficultyRef.current.currentLevel,
@@ -410,9 +423,13 @@ function appendSequentialPopulationPattern(
       );
     } else if (isSafePatternSlot) {
       pattern = SINGLE_ROCK_PATTERN;
+    } else if (isCabinPatternSlot) {
+      pattern =
+        Math.floor(serial / CABIN_PATTERN_EVERY) % 2 === 0
+          ? CABIN_AVOIDANCE_PATTERN
+          : CABIN_FLANK_WEAVE_PATTERN;
     } else {
-      const forcedPattern = pickForcedCabinPatternIfPending(isSafePatternSlot, SPAWN_PATTERN_LIBRARY);
-      pattern = forcedPattern ?? pickWeightedSpawnPattern(spawnState);
+      pattern = pickWeightedSpawnPattern(spawnState);
     }
     const centerLane =
       edgePressureTarget < 0
@@ -435,17 +452,15 @@ function appendSequentialPopulationPattern(
     lastFailedStartOriginY = startOriginY;
     lastFailedDepth = depth;
 
-    const spawnLayout = {
-      laneCount: spawnState.laneCount,
-      laneWidth: spawnState.laneWidth,
-      playableOriginX: spawnState.playableOriginX,
-    };
+    spawnLayoutScratch.laneCount = spawnState.laneCount;
+    spawnLayoutScratch.laneWidth = spawnState.laneWidth;
+    spawnLayoutScratch.playableOriginX = spawnState.playableOriginX;
 
     const originY = findClearPatternOriginY(
       pattern,
       startOriginY,
       centerLane,
-      spawnLayout,
+      spawnLayoutScratch,
       engine.obstacleRef.current,
       engine.coinRef.current,
       engine.shieldRef.current,
@@ -459,9 +474,9 @@ function appendSequentialPopulationPattern(
         pattern,
         startOriginY,
         centerLane,
-        spawnLayout.laneCount,
-        spawnLayout.laneWidth,
-        spawnLayout.playableOriginX,
+        spawnLayoutScratch.laneCount,
+        spawnLayoutScratch.laneWidth,
+        spawnLayoutScratch.playableOriginX,
       );
       if (Number.isNaN(originY)) {
         const occupiedAtStart = isSpawnAreaOccupied(
@@ -482,9 +497,9 @@ function appendSequentialPopulationPattern(
           pattern,
           originY,
           centerLane,
-          spawnLayout.laneCount,
-          spawnLayout.laneWidth,
-          spawnLayout.playableOriginX,
+          spawnLayoutScratch.laneCount,
+          spawnLayoutScratch.laneWidth,
+          spawnLayoutScratch.playableOriginX,
         );
         logCabinValidationPassed(originY, footprintAtOrigin);
       }
@@ -492,10 +507,6 @@ function appendSequentialPopulationPattern(
 
     if (Number.isNaN(originY)) {
       continue;
-    }
-
-    if (isCabinPattern) {
-      logCabinEnqueued();
     }
 
     const firstRequestIndex = spawnState.pendingCount;
@@ -508,6 +519,9 @@ function appendSequentialPopulationPattern(
     );
     if (written <= 0) {
       continue;
+    }
+    if (isCabinPattern) {
+      logCabinEnqueued();
     }
     if (
       needsEdgePressure &&
@@ -531,6 +545,11 @@ function appendSequentialPopulationPattern(
     } else if (spawnState.edgePressureCooldownRemaining > 0) {
       spawnState.edgePressureCooldownRemaining -= 1;
     }
+    if (needsEdgePressure && isCabinPatternSlot) {
+      // Edge safety wins this group, but preserve the scheduled cabin for the
+      // immediately following population group instead of skipping its cadence.
+      spawnState.populationPatternSerial = serial;
+    }
 
     const gap = randomIntInclusive(
       spawnState,
@@ -544,6 +563,10 @@ function appendSequentialPopulationPattern(
 
   spawnState.nextPatternOriginY =
     lastFailedStartOriginY + lastFailedDepth + GAME_CONFIG.PATTERN_VERTICAL_SPACING_MIN;
+  if (isCabinPatternSlot) {
+    // A temporarily full/occupied pool must delay the cabin, never consume it.
+    spawnState.populationPatternSerial = serial;
+  }
   return 0;
 }
 

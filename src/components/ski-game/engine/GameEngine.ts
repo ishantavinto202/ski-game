@@ -5,6 +5,18 @@ import type { Player } from '../entities/Player';
 import { createShieldPoolState } from '../entities/Shield';
 import { createSnowSurfacePoolState } from '../entities/SnowSurface';
 import { createSpeedBoostPoolState } from '../entities/SpeedBoost';
+import {
+  isPerformanceProfilingEnabled,
+  profileBegin,
+  profileCountFrameCallback,
+  profileEndSystem,
+  profileEngineFixedBegin,
+  profileEngineFixedEnd,
+  profileNotifyAlwaysBegin,
+  profileNotifyAlwaysEnd,
+  profileNotifyPlayingBegin,
+  profileNotifyPlayingEnd,
+} from '../profiling/PerformanceProfiling';
 import type { GameSystem } from '../types';
 import { createInitialCameraState, type CameraState } from '../types/camera-state';
 import { createInitialChaserState, type ChaserState } from '../types/ChaserTypes';
@@ -68,7 +80,10 @@ export class GameEngine {
 
   private readonly systems = new Map<string, GameSystem>();
   private readonly viewportListeners = new Set<(engine: GameEngine) => void>();
+  /** Always invoked — UI overlays that must react to pause / game-over transitions. */
   private readonly frameListeners = new Set<(engine: GameEngine) => void>();
+  /** Invoked only while gameplay is active — world / entity render sync. */
+  private readonly playingFrameListeners = new Set<(engine: GameEngine) => void>();
 
   onViewportChange(listener: (engine: GameEngine) => void): () => void {
     this.viewportListeners.add(listener);
@@ -84,21 +99,79 @@ export class GameEngine {
     };
   }
 
-  notifyFrame(): void {
+  /**
+   * Render sync for scrolling world content. Skipped while paused / game over so
+   * SharedValues stay frozen without JS fan-out. Resume picks up on the next playing frame.
+   */
+  onPlayingFrame(listener: (engine: GameEngine) => void): () => void {
+    this.playingFrameListeners.add(listener);
+    return () => {
+      this.playingFrameListeners.delete(listener);
+    };
+  }
+
+  getFrameListenerCount(): number {
+    return this.frameListeners.size;
+  }
+
+  getPlayingFrameListenerCount(): number {
+    return this.playingFrameListeners.size;
+  }
+
+  notifyFrame(syncPlayingWorld: boolean): void {
+    const profiling = isPerformanceProfilingEnabled();
+
+    const alwaysStarted = profiling ? profileNotifyAlwaysBegin() : 0;
     for (const listener of this.frameListeners) {
+      if (profiling) {
+        profileCountFrameCallback();
+      }
       listener(this);
+    }
+    if (profiling) {
+      profileNotifyAlwaysEnd(alwaysStarted);
+    }
+
+    if (!syncPlayingWorld) {
+      return;
+    }
+
+    const playingStarted = profiling ? profileNotifyPlayingBegin() : 0;
+    for (const listener of this.playingFrameListeners) {
+      if (profiling) {
+        profileCountFrameCallback();
+      }
+      listener(this);
+    }
+    if (profiling) {
+      profileNotifyPlayingEnd(playingStarted);
     }
   }
 
   runGameStateFixedUpdate(fixedDeltaMs: number): void {
     const system = this.getSystem(GAME_STATE_SYSTEM_ID);
-    system?.fixedUpdate?.(fixedDeltaMs);
+    if (!system?.fixedUpdate) {
+      return;
+    }
+    if (!isPerformanceProfilingEnabled()) {
+      system.fixedUpdate(fixedDeltaMs);
+      return;
+    }
+    const started = profileBegin();
+    system.fixedUpdate(fixedDeltaMs);
+    profileEndSystem(GAME_STATE_SYSTEM_ID, started);
   }
 
   runFixedUpdate(fixedDeltaMs: number): void {
+    const profiling = isPerformanceProfilingEnabled();
+    const engineStarted = profiling ? profileEngineFixedBegin() : 0;
+
     this.runGameStateFixedUpdate(fixedDeltaMs);
 
     if (this.gameStateRef.current.currentState !== 'playing') {
+      if (profiling) {
+        profileEngineFixedEnd(engineStarted);
+      }
       return;
     }
 
@@ -106,7 +179,20 @@ export class GameEngine {
       if (system.id === GAME_STATE_SYSTEM_ID) {
         continue;
       }
-      system.fixedUpdate?.(fixedDeltaMs);
+      if (!system.fixedUpdate) {
+        continue;
+      }
+      if (!profiling) {
+        system.fixedUpdate(fixedDeltaMs);
+        continue;
+      }
+      const started = profileBegin();
+      system.fixedUpdate(fixedDeltaMs);
+      profileEndSystem(system.id, started);
+    }
+
+    if (profiling) {
+      profileEngineFixedEnd(engineStarted);
     }
   }
 
@@ -152,5 +238,8 @@ export class GameEngine {
     for (const systemId of [...this.systems.keys()]) {
       this.unregister(systemId);
     }
+    this.viewportListeners.clear();
+    this.frameListeners.clear();
+    this.playingFrameListeners.clear();
   }
 }

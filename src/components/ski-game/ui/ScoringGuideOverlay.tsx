@@ -92,6 +92,10 @@ const overlayStyles = StyleSheet.create({
     marginTop: 10,
   },
 });
+const obstaclesSectionLabelStyle = [
+  overlayStyles.sectionLabel,
+  overlayStyles.obstaclesSectionLabel,
+];
 
 export const ScoringGuideOverlay = memo(function ScoringGuideOverlay({
   onClose,
@@ -127,6 +131,35 @@ export const ScoringGuideOverlay = memo(function ScoringGuideOverlay({
     [insets.bottom],
   );
 
+  const renderCollectible = useCallback(
+    (item: (typeof COLLECTIBLE_GUIDE_ITEMS)[number], index: number) => (
+      <ScoringGuideRow
+        key={item.id}
+        item={item}
+        isLastInSection={index === COLLECTIBLE_GUIDE_ITEMS.length - 1}
+      />
+    ),
+    [],
+  );
+  const renderObstacle = useCallback(
+    (item: (typeof OBSTACLE_GUIDE_ITEMS)[number], index: number) => (
+      <ScoringGuideRow
+        key={item.id}
+        item={item}
+        isLastInSection={index === OBSTACLE_GUIDE_ITEMS.length - 1}
+      />
+    ),
+    [],
+  );
+  const collectibleRows = useMemo(
+    () => COLLECTIBLE_GUIDE_ITEMS.map(renderCollectible),
+    [renderCollectible],
+  );
+  const obstacleRows = useMemo(
+    () => OBSTACLE_GUIDE_ITEMS.map(renderObstacle),
+    [renderObstacle],
+  );
+
   return (
     <View style={overlayStyles.root} pointerEvents="auto">
       <View style={overlayStyles.scrim} pointerEvents="none" />
@@ -150,23 +183,11 @@ export const ScoringGuideOverlay = memo(function ScoringGuideOverlay({
           bounces
         >
           <Text style={overlayStyles.sectionLabel}>COLLECTIBLES & BOOSTERS</Text>
-          {COLLECTIBLE_GUIDE_ITEMS.map((item, index) => (
-            <ScoringGuideRow
-              key={item.id}
-              item={item}
-              isLastInSection={index === COLLECTIBLE_GUIDE_ITEMS.length - 1}
-            />
-          ))}
-          <Text style={[overlayStyles.sectionLabel, overlayStyles.obstaclesSectionLabel]}>
+          {collectibleRows}
+          <Text style={obstaclesSectionLabelStyle}>
             OBSTACLES
           </Text>
-          {OBSTACLE_GUIDE_ITEMS.map((item, index) => (
-            <ScoringGuideRow
-              key={item.id}
-              item={item}
-              isLastInSection={index === OBSTACLE_GUIDE_ITEMS.length - 1}
-            />
-          ))}
+          {obstacleRows}
         </ScrollView>
       </View>
     </View>

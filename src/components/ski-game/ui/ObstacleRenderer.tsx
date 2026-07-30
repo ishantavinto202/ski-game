@@ -1,6 +1,7 @@
-import { memo, useEffect, useMemo } from 'react';
-import { Image, StyleSheet, View } from 'react-native';
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Image, StyleSheet, type ViewStyle } from 'react-native';
 import Animated, {
+  makeMutable,
   useAnimatedStyle,
   useSharedValue,
   type SharedValue,
@@ -8,7 +9,6 @@ import Animated, {
 
 import type { ViewportSize } from '../engine/GameEngine';
 import { useGameEngineContext } from '../engine/GameEngineContext';
-import { OBSTACLE_VARIANT_RENDER_INDEX } from '../utils/obstacle-variant-index';
 import {
   hasObstacleAsset,
   OBSTACLE_RENDER_ASSET_SOURCES,
@@ -17,23 +17,18 @@ import {
   resolvePrecomputedObstacleVisualLayout,
 } from '../utils/obstacle-assets';
 import { getObstacleRenderMargin } from '../utils/obstacle-render';
-import { OBSTACLE_VARIANT_PLACEHOLDER_COLORS, SKI_GAME_COLORS } from '../utils/colors';
 import { logCabinRenderedOnce } from '../utils/cabin-debug';
 import { GAME_CONFIG } from '../utils/GameConfig';
-import { worldYCenterToScreenY } from '../utils/world-coordinates';
+import { writeSharedNumber } from '../utils/shared-value-write';
 
 const AnimatedImage = Animated.createAnimatedComponent(Image);
 
 const DEBUG_OBSTACLE_HITBOXES = GAME_CONFIG.DEBUG_OBSTACLE_HITBOXES;
+const MAX_OBSTACLES = GAME_CONFIG.MAX_OBSTACLES;
 
 const layerStyle = StyleSheet.create({
   root: {
     ...StyleSheet.absoluteFillObject,
-  },
-  placeholder: {
-    position: 'absolute',
-    borderWidth: 2,
-    borderColor: SKI_GAME_COLORS.obstaclePlaceholderBorder,
   },
   assetImage: {
     position: 'absolute',
@@ -47,243 +42,142 @@ const layerStyle = StyleSheet.create({
 });
 
 const OBSTACLE_SLOT_INDICES: number[] = [];
-for (let index = 0; index < GAME_CONFIG.MAX_OBSTACLES; index += 1) {
+for (let index = 0; index < MAX_OBSTACLES; index += 1) {
   OBSTACLE_SLOT_INDICES.push(index);
 }
 
-type ObstacleAssetImageLayerProps = {
-  assetIndex: number;
-  source: number;
-  activeAssetIndex: SharedValue<number>;
+type ObstacleSlotShared = {
   opacity: SharedValue<number>;
   assetLeft: SharedValue<number>;
   assetTop: SharedValue<number>;
   assetWidth: SharedValue<number>;
   assetHeight: SharedValue<number>;
-  imageStyle: { position: 'absolute' };
+  hitboxLeft: SharedValue<number>;
+  hitboxTop: SharedValue<number>;
+  hitboxWidth: SharedValue<number>;
+  hitboxHeight: SharedValue<number>;
+  hitboxOpacity: SharedValue<number>;
 };
 
-const ObstacleAssetImageLayer = memo(function ObstacleAssetImageLayer({
-  assetIndex,
-  source,
-  activeAssetIndex,
-  opacity,
-  assetLeft,
-  assetTop,
-  assetWidth,
-  assetHeight,
-  imageStyle,
-}: ObstacleAssetImageLayerProps) {
+function createObstacleSlotShared(): ObstacleSlotShared {
+  return {
+    opacity: makeMutable(0),
+    assetLeft: makeMutable(0),
+    assetTop: makeMutable(0),
+    assetWidth: makeMutable(0),
+    assetHeight: makeMutable(0),
+    hitboxLeft: makeMutable(0),
+    hitboxTop: makeMutable(0),
+    hitboxWidth: makeMutable(0),
+    hitboxHeight: makeMutable(0),
+    hitboxOpacity: makeMutable(0),
+  };
+}
+
+function hideObstacleSlot(slot: ObstacleSlotShared): void {
+  if (slot.opacity.value === 0) {
+    return;
+  }
+  slot.opacity.value = 0;
+  slot.hitboxOpacity.value = 0;
+}
+
+type ObstacleHitboxDebugProps = {
+  shared: ObstacleSlotShared;
+};
+
+const ObstacleHitboxDebug = memo(function ObstacleHitboxDebug({
+  shared,
+}: ObstacleHitboxDebugProps) {
+  const hitboxDebugStyle = useMemo(() => layerStyle.hitboxDebug, []);
   const animatedStyle = useAnimatedStyle(() => ({
-    left: assetLeft.value,
-    top: assetTop.value,
-    width: assetWidth.value,
-    height: assetHeight.value,
-    opacity: opacity.value > 0 && activeAssetIndex.value === assetIndex ? opacity.value : 0,
+    left: shared.hitboxLeft.value,
+    top: shared.hitboxTop.value,
+    width: shared.hitboxWidth.value,
+    height: shared.hitboxHeight.value,
+    opacity: shared.opacity.value > 0 ? shared.hitboxOpacity.value : 0,
   }));
+  const compositeStyle = useMemo(
+    () => [hitboxDebugStyle, animatedStyle],
+    [animatedStyle, hitboxDebugStyle],
+  );
 
   return (
-    <AnimatedImage source={source} resizeMode="contain" style={[imageStyle, animatedStyle]} />
+    <Animated.View
+      style={compositeStyle}
+      pointerEvents="none"
+    />
   );
 });
 
 type ObstacleRenderSlotProps = {
   slotIndex: number;
-  viewport: ViewportSize;
+  shared: ObstacleSlotShared;
+  registerAssetSetter: (
+    slotIndex: number,
+    setter: ((assetIndex: number) => void) | null,
+  ) => void;
 };
 
-const ObstacleRenderSlot = memo(function ObstacleRenderSlot({
-  slotIndex,
-  viewport,
-}: ObstacleRenderSlotProps) {
-  const engine = useGameEngineContext();
-  const left = useSharedValue(0);
-  const top = useSharedValue(0);
-  const width = useSharedValue(0);
-  const height = useSharedValue(0);
-  const opacity = useSharedValue(0);
-  const variantIndex = useSharedValue(0);
-  const usesAsset = useSharedValue(0);
-  const activeAssetIndex = useSharedValue(-1);
-  const assetLeft = useSharedValue(0);
-  const assetTop = useSharedValue(0);
-  const assetWidth = useSharedValue(0);
-  const assetHeight = useSharedValue(0);
-  const hitboxLeft = useSharedValue(0);
-  const hitboxTop = useSharedValue(0);
-  const hitboxWidth = useSharedValue(0);
-  const hitboxHeight = useSharedValue(0);
-  const hitboxOpacity = useSharedValue(0);
+type ObstacleAssetVisualProps = {
+  assetSource: number;
+  shared: ObstacleSlotShared;
+};
 
-  const placeholderStyle = useMemo(() => layerStyle.placeholder, []);
+const ObstacleAssetVisual = memo(function ObstacleAssetVisual({
+  assetSource,
+  shared,
+}: ObstacleAssetVisualProps) {
   const assetImageStyle = useMemo(() => layerStyle.assetImage, []);
-  const hitboxDebugStyle = useMemo(() => layerStyle.hitboxDebug, []);
-
-  useEffect(() => {
-    const margin = getObstacleRenderMargin();
-
-    return engine.onFrame(() => {
-      const obstacle = engine.obstacleRef.current.obstacles[slotIndex];
-      if (!obstacle.active) {
-        if (opacity.value !== 0) {
-          opacity.value = 0;
-          usesAsset.value = 0;
-          activeAssetIndex.value = -1;
-          hitboxOpacity.value = 0;
-        }
-        return;
-      }
-
-      const scrollOffsetY = engine.worldRef.current.scrollOffsetY;
-      const cameraOffsetX = engine.cameraRef.current.offsetX;
-      const rectLeft = obstacle.worldX - obstacle.width * 0.5 - cameraOffsetX;
-      const rectTop =
-        worldYCenterToScreenY(scrollOffsetY, obstacle.worldY) - obstacle.height * 0.5;
-
-      if (
-        rectLeft + obstacle.width < -margin ||
-        rectLeft > viewport.width + margin ||
-        rectTop + obstacle.height < -margin ||
-        rectTop > viewport.height + margin
-      ) {
-        if (opacity.value !== 0) {
-          opacity.value = 0;
-          usesAsset.value = 0;
-          activeAssetIndex.value = -1;
-          hitboxOpacity.value = 0;
-        }
-        return;
-      }
-
-      if (obstacle.variant === 'cabin') {
-        logCabinRenderedOnce(obstacle.spawnRequestId, rectLeft, rectTop);
-      }
-
-      left.value = rectLeft;
-      top.value = rectTop;
-      width.value = obstacle.width;
-      height.value = obstacle.height;
-      variantIndex.value = OBSTACLE_VARIANT_RENDER_INDEX[obstacle.variant];
-
-      const assetIndex = resolveObstacleRenderAssetIndex(
-        obstacle.variant,
-        obstacle.treeVisualVariant,
-      );
-      if (assetIndex >= 0 && hasObstacleAsset(obstacle.variant)) {
-        const layout = resolvePrecomputedObstacleVisualLayout(
-          obstacle.variant,
-          obstacle.treeVisualVariant,
-        );
-        if (layout) {
-          activeAssetIndex.value = assetIndex;
-          usesAsset.value = 1;
-          assetLeft.value = rectLeft + layout.visualOffsetX;
-          assetTop.value = rectTop + layout.visualOffsetY;
-          assetWidth.value = layout.renderWidth;
-          assetHeight.value = layout.renderHeight;
-        } else {
-          activeAssetIndex.value = -1;
-          usesAsset.value = 0;
-        }
-      } else {
-        activeAssetIndex.value = -1;
-        usesAsset.value = 0;
-      }
-
-      if (DEBUG_OBSTACLE_HITBOXES) {
-        const collisionLayout = resolvePrecomputedObstacleCollisionLayout(
-          obstacle.variant,
-          obstacle.treeVisualVariant,
-        );
-        if (collisionLayout) {
-          hitboxLeft.value = rectLeft + collisionLayout.offsetX;
-          hitboxTop.value = rectTop + collisionLayout.offsetY;
-          hitboxWidth.value = collisionLayout.width;
-          hitboxHeight.value = collisionLayout.height;
-          hitboxOpacity.value = 1;
-        } else {
-          hitboxOpacity.value = 0;
-        }
-      } else {
-        hitboxOpacity.value = 0;
-      }
-
-      opacity.value = 1;
-    });
-  }, [
-    activeAssetIndex,
-    assetHeight,
-    assetLeft,
-    assetTop,
-    assetWidth,
-    engine,
-    height,
-    hitboxHeight,
-    hitboxLeft,
-    hitboxOpacity,
-    hitboxTop,
-    hitboxWidth,
-    left,
-    opacity,
-    slotIndex,
-    top,
-    usesAsset,
-    variantIndex,
-    viewport,
-    width,
-  ]);
-
-  const placeholderAnimatedStyle = useAnimatedStyle(() => {
-    const colors = OBSTACLE_VARIANT_PLACEHOLDER_COLORS;
-    const fillIndex = variantIndex.value;
-    const backgroundColor =
-      fillIndex >= 0 && fillIndex < colors.length ? colors[fillIndex] : colors[0];
-    const showPlaceholder = opacity.value > 0 && usesAsset.value === 0;
-
-    return {
-      left: left.value,
-      top: top.value,
-      width: width.value,
-      height: height.value,
-      opacity: showPlaceholder ? opacity.value : 0,
-      backgroundColor,
-      borderRadius: width.value > 48 ? 8 : 6,
-    };
-  });
-
-  const hitboxDebugAnimatedStyle = useAnimatedStyle(() => ({
-    left: hitboxLeft.value,
-    top: hitboxTop.value,
-    width: hitboxWidth.value,
-    height: hitboxHeight.value,
-    opacity: opacity.value > 0 ? hitboxOpacity.value : 0,
+  const assetAnimatedStyle = useAnimatedStyle(() => ({
+    left: shared.assetLeft.value,
+    top: shared.assetTop.value,
+    width: shared.assetWidth.value,
+    height: shared.assetHeight.value,
+    opacity: shared.opacity.value,
   }));
+  const assetCompositeStyle = useMemo(
+    () => [assetImageStyle, assetAnimatedStyle],
+    [assetAnimatedStyle, assetImageStyle],
+  );
 
   return (
     <>
-      <Animated.View style={[placeholderStyle, placeholderAnimatedStyle]} pointerEvents="none" />
-      {OBSTACLE_RENDER_ASSET_SOURCES.map((source, assetIndex) => (
-        <ObstacleAssetImageLayer
-          key={assetIndex}
-          assetIndex={assetIndex}
-          source={source}
-          activeAssetIndex={activeAssetIndex}
-          opacity={opacity}
-          assetLeft={assetLeft}
-          assetTop={assetTop}
-          assetWidth={assetWidth}
-          assetHeight={assetHeight}
-          imageStyle={assetImageStyle}
-        />
-      ))}
+      <AnimatedImage
+        source={assetSource}
+        resizeMode="contain"
+        style={assetCompositeStyle}
+      />
       {DEBUG_OBSTACLE_HITBOXES ? (
-        <Animated.View
-          style={[hitboxDebugStyle, hitboxDebugAnimatedStyle]}
-          pointerEvents="none"
-        />
+        <ObstacleHitboxDebug shared={shared} />
       ) : null}
     </>
   );
+});
+
+const ObstacleRenderSlot = memo(function ObstacleRenderSlot({
+  slotIndex,
+  shared,
+  registerAssetSetter,
+}: ObstacleRenderSlotProps) {
+  const [assetSource, setAssetSource] = useState<number | null>(null);
+
+  const handleAssetIndex = useCallback((assetIndex: number) => {
+    setAssetSource(
+      assetIndex >= 0 ? OBSTACLE_RENDER_ASSET_SOURCES[assetIndex] : null,
+    );
+  }, []);
+
+  useEffect(() => {
+    registerAssetSetter(slotIndex, handleAssetIndex);
+    return () => {
+      registerAssetSetter(slotIndex, null);
+    };
+  }, [handleAssetIndex, registerAssetSetter, slotIndex]);
+
+  return assetSource !== null ? (
+    <ObstacleAssetVisual assetSource={assetSource} shared={shared} />
+  ) : null;
 });
 
 type ObstacleRendererProps = {
@@ -291,11 +185,198 @@ type ObstacleRendererProps = {
 };
 
 export const ObstacleRenderer = memo(function ObstacleRenderer({ viewport }: ObstacleRendererProps) {
+  const engine = useGameEngineContext();
+
+  const slots = useMemo(() => {
+    const list: ObstacleSlotShared[] = new Array(MAX_OBSTACLES);
+    for (let index = 0; index < MAX_OBSTACLES; index += 1) {
+      list[index] = createObstacleSlotShared();
+    }
+    return list;
+  }, []);
+
+  const assetSettersRef = useRef<(((assetIndex: number) => void) | null)[]>(
+    new Array(MAX_OBSTACLES).fill(null),
+  );
+  const lastObstacleIdRef = useRef(new Int32Array(MAX_OBSTACLES));
+  const lastAssetIndexRef = useRef(new Int16Array(MAX_OBSTACLES).fill(-1));
+  const cameraOffsetX = useSharedValue(0);
+  const scrollOffsetY = useSharedValue(0);
+
+  const registerAssetSetter = useCallback(
+    (slotIndex: number, setter: ((assetIndex: number) => void) | null) => {
+      assetSettersRef.current[slotIndex] = setter;
+    },
+    [],
+  );
+
+  useEffect(() => {
+    const margin = getObstacleRenderMargin();
+    const lastObstacleId = lastObstacleIdRef.current;
+    const lastAssetIndex = lastAssetIndexRef.current;
+    const releaseSlot = (slotIndex: number): void => {
+      if (
+        lastObstacleId[slotIndex] !== 0 ||
+        lastAssetIndex[slotIndex] !== -1
+      ) {
+        lastObstacleId[slotIndex] = 0;
+        lastAssetIndex[slotIndex] = -1;
+        assetSettersRef.current[slotIndex]?.(-1);
+      }
+      hideObstacleSlot(slots[slotIndex]);
+    };
+
+    return engine.onPlayingFrame(() => {
+      const obstacles = engine.obstacleRef.current.obstacles;
+      const nextScrollOffsetY = engine.worldRef.current.scrollOffsetY;
+      const nextCameraOffsetX = engine.cameraRef.current.offsetX;
+      const viewportWidth = viewport.width;
+      const viewportHeight = viewport.height;
+      writeSharedNumber(scrollOffsetY, nextScrollOffsetY);
+      writeSharedNumber(cameraOffsetX, nextCameraOffsetX);
+      let mountsRemaining =
+        GAME_CONFIG.VISUAL_PRELOAD_MOUNTS_PER_RENDERER_FRAME;
+
+      for (let slotIndex = 0; slotIndex < MAX_OBSTACLES; slotIndex += 1) {
+        const slot = slots[slotIndex];
+        const obstacle = obstacles[slotIndex];
+
+        if (!obstacle.active) {
+          releaseSlot(slotIndex);
+          continue;
+        }
+
+        const localRectLeft = obstacle.worldX - obstacle.width * 0.5;
+        const localRectTop = -obstacle.worldY - obstacle.height * 0.5;
+        const screenRectLeft = localRectLeft - nextCameraOffsetX;
+        const screenRectTop = localRectTop + nextScrollOffsetY;
+
+        if (
+          screenRectLeft + obstacle.width < -margin ||
+          screenRectLeft > viewportWidth + margin ||
+          screenRectTop + obstacle.height < -margin ||
+          screenRectTop > viewportHeight + margin
+        ) {
+          releaseSlot(slotIndex);
+          continue;
+        }
+
+        if (lastObstacleId[slotIndex] === obstacle.id) {
+          writeSharedNumber(slot.opacity, 1);
+          continue;
+        }
+
+        const assetIndex = resolveObstacleRenderAssetIndex(
+          obstacle.variant,
+          obstacle.treeVisualVariant,
+        );
+
+        if (assetIndex >= 0 && hasObstacleAsset(obstacle.variant)) {
+          const layout = resolvePrecomputedObstacleVisualLayout(
+            obstacle.variant,
+            obstacle.treeVisualVariant,
+          );
+          if (layout) {
+            writeSharedNumber(slot.assetLeft, localRectLeft + layout.visualOffsetX);
+            writeSharedNumber(slot.assetTop, localRectTop + layout.visualOffsetY);
+            writeSharedNumber(slot.assetWidth, layout.renderWidth);
+            writeSharedNumber(slot.assetHeight, layout.renderHeight);
+            if (lastAssetIndex[slotIndex] !== assetIndex) {
+              if (mountsRemaining <= 0) {
+                writeSharedNumber(slot.opacity, 0);
+                continue;
+              }
+              const assetSetter = assetSettersRef.current[slotIndex];
+              if (!assetSetter) {
+                writeSharedNumber(slot.opacity, 0);
+                continue;
+              }
+              mountsRemaining -= 1;
+              lastAssetIndex[slotIndex] = assetIndex;
+              assetSetter(assetIndex);
+            }
+          } else {
+            writeSharedNumber(slot.opacity, 0);
+            lastAssetIndex[slotIndex] = -1;
+            continue;
+          }
+        } else {
+          writeSharedNumber(slot.opacity, 0);
+          lastAssetIndex[slotIndex] = -1;
+          continue;
+        }
+
+        if (DEBUG_OBSTACLE_HITBOXES) {
+          const collisionLayout = resolvePrecomputedObstacleCollisionLayout(
+            obstacle.variant,
+            obstacle.treeVisualVariant,
+          );
+          if (collisionLayout) {
+            writeSharedNumber(slot.hitboxLeft, localRectLeft + collisionLayout.offsetX);
+            writeSharedNumber(slot.hitboxTop, localRectTop + collisionLayout.offsetY);
+            writeSharedNumber(slot.hitboxWidth, collisionLayout.width);
+            writeSharedNumber(slot.hitboxHeight, collisionLayout.height);
+            writeSharedNumber(slot.hitboxOpacity, 1);
+          } else {
+            writeSharedNumber(slot.hitboxOpacity, 0);
+          }
+        } else {
+          writeSharedNumber(slot.hitboxOpacity, 0);
+        }
+
+        lastObstacleId[slotIndex] = obstacle.id;
+        if (obstacle.variant === 'cabin') {
+          logCabinRenderedOnce(
+            obstacle.spawnRequestId,
+            screenRectLeft,
+            screenRectTop,
+          );
+        }
+        writeSharedNumber(slot.opacity, 1);
+      }
+    });
+  }, [
+    cameraOffsetX,
+    engine,
+    scrollOffsetY,
+    slots,
+    viewport.height,
+    viewport.width,
+  ]);
+
+  const layerTransformStyle = useAnimatedStyle<ViewStyle>(() => ({
+    transform: [
+      { translateX: -cameraOffsetX.value },
+      { translateY: scrollOffsetY.value },
+    ] as ViewStyle['transform'],
+  }));
+  const animatedLayerStyle = useMemo(
+    () => [layerStyle.root, layerTransformStyle],
+    [layerTransformStyle],
+  );
+
+  const renderSlot = useCallback(
+    (slotIndex: number) => (
+      <ObstacleRenderSlot
+        key={slotIndex}
+        slotIndex={slotIndex}
+        shared={slots[slotIndex]}
+        registerAssetSetter={registerAssetSetter}
+      />
+    ),
+    [registerAssetSetter, slots],
+  );
+  const slotElements = useMemo(
+    () => OBSTACLE_SLOT_INDICES.map(renderSlot),
+    [renderSlot],
+  );
+
   return (
-    <View style={layerStyle.root} pointerEvents="none">
-      {OBSTACLE_SLOT_INDICES.map((slotIndex) => (
-        <ObstacleRenderSlot key={slotIndex} slotIndex={slotIndex} viewport={viewport} />
-      ))}
-    </View>
+    <Animated.View
+      style={animatedLayerStyle}
+      pointerEvents="none"
+    >
+      {slotElements}
+    </Animated.View>
   );
 });

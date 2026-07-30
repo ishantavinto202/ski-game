@@ -79,7 +79,7 @@ export const ShieldRockOverlapDebug = memo(function ShieldRockOverlapDebug({
     }
 
     let frame = 0;
-    return engine.onFrame(() => {
+    return engine.onPlayingFrame(() => {
       if (capture) {
         return;
       }
@@ -137,33 +137,31 @@ export const ShieldRockOverlapDebug = memo(function ShieldRockOverlapDebug({
   if (!capture) {
     return null;
   }
+  const shieldBoxStyle = [
+    styles.box,
+    {
+      left: capture.shield.left,
+      top: capture.shield.top,
+      width: capture.shield.width,
+      height: capture.shield.height,
+      borderColor: capture.shield.color,
+    },
+  ];
+  const rockBoxStyle = [
+    styles.box,
+    {
+      left: capture.rock.left,
+      top: capture.rock.top,
+      width: capture.rock.width,
+      height: capture.rock.height,
+      borderColor: capture.rock.color,
+    },
+  ];
 
   return (
     <View style={styles.root} pointerEvents="none">
-      <View
-        style={[
-          styles.box,
-          {
-            left: capture.shield.left,
-            top: capture.shield.top,
-            width: capture.shield.width,
-            height: capture.shield.height,
-            borderColor: capture.shield.color,
-          },
-        ]}
-      />
-      <View
-        style={[
-          styles.box,
-          {
-            left: capture.rock.left,
-            top: capture.rock.top,
-            width: capture.rock.width,
-            height: capture.rock.height,
-            borderColor: capture.rock.color,
-          },
-        ]}
-      />
+      <View style={shieldBoxStyle} />
+      <View style={rockBoxStyle} />
     </View>
   );
 });

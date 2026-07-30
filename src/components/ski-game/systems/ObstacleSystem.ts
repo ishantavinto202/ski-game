@@ -6,6 +6,7 @@ import {
   pickWeightedObstacleVariant,
 } from '../entities/Obstacle';
 import type { GameEngine } from '../engine/GameEngine';
+import { profileSpawnRejected } from '../profiling/PerformanceProfiling';
 import type { SpawnRequest } from '../types/SpawnTypes';
 import type { GameSystem } from '../types';
 import { worldYCenterToScreenY } from '../utils/world-coordinates';
@@ -82,6 +83,7 @@ export class ObstacleSystem implements GameSystem {
     const pool = engine.obstacleRef.current;
     const slot = findInactiveObstacleSlot(pool);
     if (!slot) {
+      profileSpawnRejected();
       return false;
     }
 

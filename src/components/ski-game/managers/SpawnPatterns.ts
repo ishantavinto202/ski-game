@@ -1,5 +1,27 @@
 import type { SpawnPattern, SpawnPatternDifficulty } from '../types/SpawnPatternTypes';
 
+export const CABIN_AVOIDANCE_PATTERN: SpawnPattern = {
+  id: 'cabin_avoidance',
+  weight: 5,
+  difficulty: 'hard',
+  obstacles: [
+    { variant: 'small_rock', laneOffset: -1, forwardOffset: 0 },
+    { variant: 'cabin', laneOffset: 0, forwardOffset: 80 },
+    { variant: 'tree', laneOffset: 1, forwardOffset: 200 },
+  ],
+};
+
+export const CABIN_FLANK_WEAVE_PATTERN: SpawnPattern = {
+  id: 'cabin_flank_weave',
+  weight: 4,
+  difficulty: 'hard',
+  obstacles: [
+    { variant: 'tree_stump', laneOffset: -2, forwardOffset: 0 },
+    { variant: 'cabin', laneOffset: 1, forwardOffset: 60 },
+    { variant: 'small_rock', laneOffset: -1, forwardOffset: 190 },
+  ],
+};
+
 /** Handcrafted moments — placement only; variants are fixed in {@link ObstacleTypes}. */
 export const SPAWN_PATTERN_LIBRARY: readonly SpawnPattern[] = [
   // —— Easy (readable, obvious lane) ——
@@ -221,26 +243,8 @@ export const SPAWN_PATTERN_LIBRARY: readonly SpawnPattern[] = [
   },
 
   // —— Hard ( tighter timing, still one clear line ) ——
-  {
-    id: 'cabin_avoidance',
-    weight: 5,
-    difficulty: 'hard',
-    obstacles: [
-      { variant: 'small_rock', laneOffset: -1, forwardOffset: 0 },
-      { variant: 'cabin', laneOffset: 0, forwardOffset: 80 },
-      { variant: 'tree', laneOffset: 1, forwardOffset: 200 },
-    ],
-  },
-  {
-    id: 'cabin_flank_weave',
-    weight: 4,
-    difficulty: 'hard',
-    obstacles: [
-      { variant: 'tree_stump', laneOffset: -2, forwardOffset: 0 },
-      { variant: 'cabin', laneOffset: 1, forwardOffset: 60 },
-      { variant: 'small_rock', laneOffset: -1, forwardOffset: 190 },
-    ],
-  },
+  CABIN_AVOIDANCE_PATTERN,
+  CABIN_FLANK_WEAVE_PATTERN,
   {
     id: 'fence_edge_chicane',
     weight: 5,

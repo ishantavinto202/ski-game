@@ -6,6 +6,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useGameEngineContext } from '../engine/GameEngineContext';
 import { SKI_GAME_COLORS } from '../utils/colors';
 import { GAME_CONFIG } from '../utils/GameConfig';
+import { writeSharedNumber } from '../utils/shared-value-write';
 
 import { HUD_TOP_OFFSET } from './HudStyles';
 
@@ -78,36 +79,63 @@ export const ActiveEffectDurationHud = memo(function ActiveEffectDurationHud() {
   const shieldActive = useSharedValue(0);
   const shieldFillWidth = useSharedValue(0);
 
-  const rootTop = useMemo(() => insets.top + HUD_TOP_OFFSET, [insets.top]);
+  const rootStyle = useMemo(
+    () => [styles.root, { top: insets.top + HUD_TOP_OFFSET }],
+    [insets.top],
+  );
 
   useEffect(() => {
     const speedPool = engine.speedBoostRef.current;
     const shieldPool = engine.shieldRef.current;
 
-    speedActive.value = speedPool.isSpeedBoostActive ? 1 : 0;
-    speedFillWidth.value = speedPool.isSpeedBoostActive
-      ? clampRatio(speedPool.remainingSpeedBoostMs, SPEED_TOTAL_MS) * EFFECT_DURATION_BAR_WIDTH
-      : 0;
+    writeSharedNumber(speedActive, speedPool.isSpeedBoostActive ? 1 : 0);
+    writeSharedNumber(
+      speedFillWidth,
+      speedPool.isSpeedBoostActive
+        ? Math.round(
+            clampRatio(speedPool.remainingSpeedBoostMs, SPEED_TOTAL_MS) *
+              EFFECT_DURATION_BAR_WIDTH,
+          )
+        : 0,
+    );
 
-    shieldActive.value = shieldPool.isShieldActive ? 1 : 0;
-    shieldFillWidth.value = shieldPool.isShieldActive
-      ? clampRatio(shieldPool.remainingShieldMs, SHIELD_TOTAL_MS) * EFFECT_DURATION_BAR_WIDTH
-      : 0;
+    writeSharedNumber(shieldActive, shieldPool.isShieldActive ? 1 : 0);
+    writeSharedNumber(
+      shieldFillWidth,
+      shieldPool.isShieldActive
+        ? Math.round(
+            clampRatio(shieldPool.remainingShieldMs, SHIELD_TOTAL_MS) *
+              EFFECT_DURATION_BAR_WIDTH,
+          )
+        : 0,
+    );
 
-    return engine.onFrame(() => {
+    return engine.onPlayingFrame(() => {
       const speedBoost = engine.speedBoostRef.current;
       const speedIsActive = speedBoost.isSpeedBoostActive;
-      speedActive.value = speedIsActive ? 1 : 0;
-      speedFillWidth.value = speedIsActive
-        ? clampRatio(speedBoost.remainingSpeedBoostMs, SPEED_TOTAL_MS) * EFFECT_DURATION_BAR_WIDTH
-        : 0;
+      writeSharedNumber(speedActive, speedIsActive ? 1 : 0);
+      writeSharedNumber(
+        speedFillWidth,
+        speedIsActive
+          ? Math.round(
+              clampRatio(speedBoost.remainingSpeedBoostMs, SPEED_TOTAL_MS) *
+                EFFECT_DURATION_BAR_WIDTH,
+            )
+          : 0,
+      );
 
       const shield = engine.shieldRef.current;
       const shieldIsActive = shield.isShieldActive;
-      shieldActive.value = shieldIsActive ? 1 : 0;
-      shieldFillWidth.value = shieldIsActive
-        ? clampRatio(shield.remainingShieldMs, SHIELD_TOTAL_MS) * EFFECT_DURATION_BAR_WIDTH
-        : 0;
+      writeSharedNumber(shieldActive, shieldIsActive ? 1 : 0);
+      writeSharedNumber(
+        shieldFillWidth,
+        shieldIsActive
+          ? Math.round(
+              clampRatio(shield.remainingShieldMs, SHIELD_TOTAL_MS) *
+                EFFECT_DURATION_BAR_WIDTH,
+            )
+          : 0,
+      );
     });
   }, [engine, shieldActive, shieldFillWidth, speedActive, speedFillWidth]);
 
@@ -126,21 +154,37 @@ export const ActiveEffectDurationHud = memo(function ActiveEffectDurationHud() {
   const shieldFillStyle = useAnimatedStyle(() => ({
     width: shieldFillWidth.value,
   }));
+  const speedClusterCompositeStyle = useMemo(
+    () => [styles.cluster, speedClusterStyle],
+    [speedClusterStyle],
+  );
+  const speedFillCompositeStyle = useMemo(
+    () => [styles.speedFill, speedFillStyle],
+    [speedFillStyle],
+  );
+  const shieldClusterCompositeStyle = useMemo(
+    () => [styles.cluster, shieldClusterStyle],
+    [shieldClusterStyle],
+  );
+  const shieldFillCompositeStyle = useMemo(
+    () => [styles.shieldFill, shieldFillStyle],
+    [shieldFillStyle],
+  );
 
   return (
-    <View style={[styles.root, { top: rootTop }]} pointerEvents="none">
+    <View style={rootStyle} pointerEvents="none">
       <View style={styles.stack}>
-        <Animated.View style={[styles.cluster, speedClusterStyle]}>
+        <Animated.View style={speedClusterCompositeStyle}>
           <Text style={styles.label}>⚡ SPEED</Text>
           <View style={styles.track}>
-            <Animated.View style={[styles.speedFill, speedFillStyle]} />
+            <Animated.View style={speedFillCompositeStyle} />
           </View>
         </Animated.View>
 
-        <Animated.View style={[styles.cluster, shieldClusterStyle]}>
+        <Animated.View style={shieldClusterCompositeStyle}>
           <Text style={styles.label}>🛡 SHIELD</Text>
           <View style={styles.track}>
-            <Animated.View style={[styles.shieldFill, shieldFillStyle]} />
+            <Animated.View style={shieldFillCompositeStyle} />
           </View>
         </Animated.View>
       </View>

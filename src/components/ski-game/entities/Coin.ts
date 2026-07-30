@@ -1,4 +1,5 @@
 import { GAME_CONFIG } from '../utils/GameConfig';
+import { profilePickupSpawn } from '../profiling/PerformanceProfiling';
 import { worldYCenterToScreenY } from '../utils/world-coordinates';
 
 import {
@@ -74,6 +75,7 @@ export function activateCoinFromSpawn(
   slot.active = true;
 
   pool.activeCount += 1;
+  profilePickupSpawn();
 }
 
 export function deactivateCoin(slot: CoinRecord, pool: CoinPoolState): void {

@@ -1,13 +1,18 @@
-import { memo, useEffect, useMemo } from 'react';
-import { Image, StyleSheet, View } from 'react-native';
-import Animated, { useAnimatedStyle, useSharedValue, type SharedValue } from 'react-native-reanimated';
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Image, StyleSheet, type ViewStyle } from 'react-native';
+import Animated, {
+  makeMutable,
+  useAnimatedStyle,
+  useSharedValue,
+  type SharedValue,
+} from 'react-native-reanimated';
 
 import type { ViewportSize } from '../engine/GameEngine';
 import { useGameEngineContext } from '../engine/GameEngineContext';
 import { SPEED_BOOST_WORLD_SIZE } from '../types/SpeedBoostTypes';
 import { GAME_CONFIG } from '../utils/GameConfig';
 import { getSpeedBoostRenderMargin } from '../utils/speed-boost-render';
-import { worldYCenterToScreenY } from '../utils/world-coordinates';
+import { writeSharedNumber } from '../utils/shared-value-write';
 
 import speedBoostAtlasMetadata from '../../../../assets/assets/Thunder Animations/speed-boost-sprite.json';
 
@@ -17,6 +22,7 @@ const SPEED_BOOST_ATLAS_TEXTURE =
 /** Match ShieldPickupRenderer (~12 FPS sprite loop; independent of the 60 FPS game loop). */
 const SPEED_BOOST_ANIMATION_FPS = 12;
 const SPEED_BOOST_FRAME_MS = 1000 / SPEED_BOOST_ANIMATION_FPS;
+const MAX_SPEED_BOOSTS = GAME_CONFIG.MAX_SPEED_BOOSTS;
 
 type TexturePackerFrameEntry = {
   frame: { x: number; y: number; w: number; h: number };
@@ -39,7 +45,6 @@ function buildSpeedBoostAtlasFrameTables(): {
   atlasHeight: number;
   frameCount: number;
 } {
-  // Numbered frame names — not atlas grid order, not object insertion order.
   const frameKeys = Object.keys(speedBoostAtlas.frames).sort((leftKey, rightKey) => {
     const leftNumber = Number.parseInt(leftKey, 10);
     const rightNumber = Number.parseInt(rightKey, 10);
@@ -95,80 +100,51 @@ const layerStyle = StyleSheet.create({
 });
 
 const SPEED_BOOST_SLOT_INDICES: number[] = [];
-for (let index = 0; index < GAME_CONFIG.MAX_SPEED_BOOSTS; index += 1) {
+for (let index = 0; index < MAX_SPEED_BOOSTS; index += 1) {
   SPEED_BOOST_SLOT_INDICES.push(index);
 }
 
-type SpeedBoostRenderSlotProps = {
-  slotIndex: number;
-  viewport: ViewportSize;
+type SpeedBoostSlotShared = {
+  left: SharedValue<number>;
+  top: SharedValue<number>;
+  width: SharedValue<number>;
+  height: SharedValue<number>;
+  opacity: SharedValue<number>;
+};
+
+function createSpeedBoostSlotShared(): SpeedBoostSlotShared {
+  return {
+    left: makeMutable(0),
+    top: makeMutable(0),
+    width: makeMutable(SPEED_BOOST_WORLD_SIZE.width),
+    height: makeMutable(SPEED_BOOST_WORLD_SIZE.height),
+    opacity: makeMutable(0),
+  };
+}
+
+type SpeedBoostVisualProps = {
+  shared: SpeedBoostSlotShared;
   animFrameIndex: SharedValue<number>;
 };
 
-const SpeedBoostRenderSlot = memo(function SpeedBoostRenderSlot({
-  slotIndex,
-  viewport,
+const SpeedBoostVisual = memo(function SpeedBoostVisual({
+  shared,
   animFrameIndex,
-}: SpeedBoostRenderSlotProps) {
-  const engine = useGameEngineContext();
-  const left = useSharedValue(0);
-  const top = useSharedValue(0);
-  const width = useSharedValue<number>(SPEED_BOOST_WORLD_SIZE.width);
-  const height = useSharedValue<number>(SPEED_BOOST_WORLD_SIZE.height);
-  const opacity = useSharedValue(0);
-
+}: SpeedBoostVisualProps) {
   const clipStyle = useMemo(() => layerStyle.clip, []);
   const atlasImageStyle = useMemo(() => layerStyle.atlasImage, []);
-
-  useEffect(() => {
-    const margin = getSpeedBoostRenderMargin();
-
-    return engine.onFrame(() => {
-      const speedBoost = engine.speedBoostRef.current.speedBoosts[slotIndex];
-      if (!speedBoost.active) {
-        if (opacity.value !== 0) {
-          opacity.value = 0;
-        }
-        return;
-      }
-
-      const scrollOffsetY = engine.worldRef.current.scrollOffsetY;
-      const cameraOffsetX = engine.cameraRef.current.offsetX;
-      const rectLeft = speedBoost.worldX - speedBoost.width * 0.5 - cameraOffsetX;
-      const rectTop =
-        worldYCenterToScreenY(scrollOffsetY, speedBoost.worldY) - speedBoost.height * 0.5;
-
-      if (
-        rectLeft + speedBoost.width < -margin ||
-        rectLeft > viewport.width + margin ||
-        rectTop + speedBoost.height < -margin ||
-        rectTop > viewport.height + margin
-      ) {
-        if (opacity.value !== 0) {
-          opacity.value = 0;
-        }
-        return;
-      }
-
-      left.value = rectLeft;
-      top.value = rectTop;
-      width.value = speedBoost.width;
-      height.value = speedBoost.height;
-      opacity.value = 1;
-    });
-  }, [engine, height, left, opacity, slotIndex, top, viewport, width]);
 
   /**
    * Same proven ShieldPickupRenderer strategy: clip = exact contain-fitted source frame
    * (174×258), centered inside the unchanged gameplay rect — never pad inside the clip.
    */
   const animatedClipStyle = useAnimatedStyle(() => {
-    const boundsWidth = width.value;
-    const boundsHeight = height.value;
+    const boundsWidth = shared.width.value;
+    const boundsHeight = shared.height.value;
     if (boundsWidth <= 0 || boundsHeight <= 0) {
       return {
-        left: left.value,
-        top: top.value,
+        left: shared.left.value,
+        top: shared.top.value,
         width: 0,
         height: 0,
         opacity: 0,
@@ -193,18 +169,18 @@ const SpeedBoostRenderSlot = memo(function SpeedBoostRenderSlot({
     const padY = Math.floor((boundsHeight - renderedFrameHeight) * 0.5);
 
     return {
-      left: left.value + padX,
-      top: top.value + padY,
+      left: shared.left.value + padX,
+      top: shared.top.value + padY,
       width: renderedFrameWidth,
       height: renderedFrameHeight,
-      opacity: opacity.value,
+      opacity: shared.opacity.value,
     };
   });
 
   const animatedAtlasStyle = useAnimatedStyle(() => {
-    const boundsWidth = width.value;
-    const boundsHeight = height.value;
-    if (boundsWidth <= 0 || boundsHeight <= 0) {
+    const boundsWidth = shared.width.value;
+    const boundsHeight = shared.height.value;
+    if (shared.opacity.value <= 0 || boundsWidth <= 0 || boundsHeight <= 0) {
       return {
         width: 0,
         height: 0,
@@ -245,16 +221,52 @@ const SpeedBoostRenderSlot = memo(function SpeedBoostRenderSlot({
       top: -(frameY * scaleY),
     };
   });
+  const clipCompositeStyle = useMemo(
+    () => [clipStyle, animatedClipStyle],
+    [animatedClipStyle, clipStyle],
+  );
+  const atlasCompositeStyle = useMemo(
+    () => [atlasImageStyle, animatedAtlasStyle],
+    [animatedAtlasStyle, atlasImageStyle],
+  );
 
   return (
-    <Animated.View style={[clipStyle, animatedClipStyle]} pointerEvents="none">
+    <Animated.View style={clipCompositeStyle} pointerEvents="none">
       <AnimatedImage
         source={SPEED_BOOST_ATLAS_TEXTURE}
-        style={[atlasImageStyle, animatedAtlasStyle]}
+        style={atlasCompositeStyle}
         resizeMode="stretch"
       />
     </Animated.View>
   );
+});
+
+type SpeedBoostRenderSlotProps = SpeedBoostVisualProps & {
+  slotIndex: number;
+  registerVisibilitySetter: (
+    slotIndex: number,
+    setter: ((visible: boolean) => void) | null,
+  ) => void;
+};
+
+const SpeedBoostRenderSlot = memo(function SpeedBoostRenderSlot({
+  slotIndex,
+  shared,
+  animFrameIndex,
+  registerVisibilitySetter,
+}: SpeedBoostRenderSlotProps) {
+  const [visible, setVisible] = useState(false);
+
+  useEffect(() => {
+    registerVisibilitySetter(slotIndex, setVisible);
+    return () => {
+      registerVisibilitySetter(slotIndex, null);
+    };
+  }, [registerVisibilitySetter, slotIndex]);
+
+  return visible ? (
+    <SpeedBoostVisual shared={shared} animFrameIndex={animFrameIndex} />
+  ) : null;
 });
 
 type SpeedBoostRendererProps = {
@@ -266,25 +278,143 @@ export const SpeedBoostRenderer = memo(function SpeedBoostRenderer({
 }: SpeedBoostRendererProps) {
   const engine = useGameEngineContext();
   const animFrameIndex = useSharedValue(0);
+  const cameraOffsetX = useSharedValue(0);
+  const scrollOffsetY = useSharedValue(0);
+
+  const slots = useMemo(() => {
+    const list: SpeedBoostSlotShared[] = new Array(MAX_SPEED_BOOSTS);
+    for (let index = 0; index < MAX_SPEED_BOOSTS; index += 1) {
+      list[index] = createSpeedBoostSlotShared();
+    }
+    return list;
+  }, []);
+  const lastSpeedBoostIdRef = useRef(new Int32Array(MAX_SPEED_BOOSTS));
+  const visibilitySettersRef = useRef<
+    (((visible: boolean) => void) | null)[]
+  >(new Array(MAX_SPEED_BOOSTS).fill(null));
+  const visibleSlotsRef = useRef(new Uint8Array(MAX_SPEED_BOOSTS));
+
+  const registerVisibilitySetter = useCallback(
+    (
+      slotIndex: number,
+      setter: ((visible: boolean) => void) | null,
+    ) => {
+      visibilitySettersRef.current[slotIndex] = setter;
+      setter?.(visibleSlotsRef.current[slotIndex] === 1);
+    },
+    [],
+  );
 
   useEffect(() => {
-    return engine.onFrame(() => {
+    const margin = getSpeedBoostRenderMargin();
+    const visibleSlots = visibleSlotsRef.current;
+    const setSlotVisible = (slotIndex: number, visible: boolean): void => {
+      const nextValue = visible ? 1 : 0;
+      if (visibleSlots[slotIndex] === nextValue) {
+        return;
+      }
+      visibleSlots[slotIndex] = nextValue;
+      visibilitySettersRef.current[slotIndex]?.(visible);
+    };
+
+    return engine.onPlayingFrame(() => {
       const elapsedMs = engine.timeRef.current.elapsedMs;
-      animFrameIndex.value =
-        Math.floor(elapsedMs / SPEED_BOOST_FRAME_MS) % SPEED_BOOST_FRAME_COUNT;
+      writeSharedNumber(
+        animFrameIndex,
+        Math.floor(elapsedMs / SPEED_BOOST_FRAME_MS) % SPEED_BOOST_FRAME_COUNT,
+      );
+
+      const speedBoosts = engine.speedBoostRef.current.speedBoosts;
+      const nextScrollOffsetY = engine.worldRef.current.scrollOffsetY;
+      const nextCameraOffsetX = engine.cameraRef.current.offsetX;
+      const viewportWidth = viewport.width;
+      const viewportHeight = viewport.height;
+      const lastSpeedBoostId = lastSpeedBoostIdRef.current;
+      writeSharedNumber(scrollOffsetY, nextScrollOffsetY);
+      writeSharedNumber(cameraOffsetX, nextCameraOffsetX);
+
+      for (let slotIndex = 0; slotIndex < MAX_SPEED_BOOSTS; slotIndex += 1) {
+        const slot = slots[slotIndex];
+        const speedBoost = speedBoosts[slotIndex];
+
+        if (!speedBoost.active) {
+          lastSpeedBoostId[slotIndex] = 0;
+          setSlotVisible(slotIndex, false);
+          writeSharedNumber(slot.opacity, 0);
+          continue;
+        }
+
+        const localLeft = speedBoost.worldX - speedBoost.width * 0.5;
+        const localTop = -speedBoost.worldY - speedBoost.height * 0.5;
+        const screenLeft = localLeft - nextCameraOffsetX;
+        const screenTop = localTop + nextScrollOffsetY;
+
+        if (
+          screenLeft + speedBoost.width < -margin ||
+          screenLeft > viewportWidth + margin ||
+          screenTop + speedBoost.height < -margin ||
+          screenTop > viewportHeight + margin
+        ) {
+          setSlotVisible(slotIndex, false);
+          writeSharedNumber(slot.opacity, 0);
+          continue;
+        }
+
+        if (lastSpeedBoostId[slotIndex] !== speedBoost.id) {
+          lastSpeedBoostId[slotIndex] = speedBoost.id;
+          writeSharedNumber(slot.left, localLeft);
+          writeSharedNumber(slot.top, localTop);
+          writeSharedNumber(slot.width, speedBoost.width);
+          writeSharedNumber(slot.height, speedBoost.height);
+        }
+        writeSharedNumber(slot.opacity, 1);
+        setSlotVisible(slotIndex, true);
+      }
     });
-  }, [animFrameIndex, engine]);
+  }, [
+    animFrameIndex,
+    cameraOffsetX,
+    engine,
+    scrollOffsetY,
+    slots,
+    viewport.height,
+    viewport.width,
+  ]);
+
+  const layerTransformStyle = useAnimatedStyle<ViewStyle>(() => ({
+    transform: [
+      { translateX: -cameraOffsetX.value },
+      { translateY: scrollOffsetY.value },
+    ] as ViewStyle['transform'],
+  }));
+  const animatedLayerStyle = useMemo(
+    () => [layerStyle.root, layerTransformStyle],
+    [layerTransformStyle],
+  );
+
+  const renderSlot = useCallback(
+    (slotIndex: number) => (
+      <SpeedBoostRenderSlot
+        key={slotIndex}
+        slotIndex={slotIndex}
+        shared={slots[slotIndex]}
+        animFrameIndex={animFrameIndex}
+        registerVisibilitySetter={registerVisibilitySetter}
+      />
+    ),
+    [animFrameIndex, registerVisibilitySetter, slots],
+  );
+  const slotElements = useMemo(
+    () => SPEED_BOOST_SLOT_INDICES.map(renderSlot),
+    [renderSlot],
+  );
 
   return (
-    <View style={layerStyle.root} pointerEvents="none">
-      {SPEED_BOOST_SLOT_INDICES.map((slotIndex) => (
-        <SpeedBoostRenderSlot
-          key={slotIndex}
-          slotIndex={slotIndex}
-          viewport={viewport}
-          animFrameIndex={animFrameIndex}
-        />
-      ))}
-    </View>
+    <Animated.View
+      style={animatedLayerStyle}
+      pointerEvents="none"
+    >
+      {slotElements}
+    </Animated.View>
   );
 });

@@ -6,7 +6,7 @@ import {
   type SpawnManagerState,
 } from '../types/SpawnTypes';
 import type { GameSystem } from '../types';
-import { GAME_CONFIG } from '../utils/GameConfig';
+import { GAME_CONFIG, perfFeatureEnabled } from '../utils/GameConfig';
 import { maintainSpawnPopulationAhead } from '../utils/spawn-population';
 import { spawnWorldYAboveViewport } from '../utils/world-coordinates';
 import { findClearPickupSpawn, type PickupSpawnKind } from '../utils/spawn-validation';
@@ -38,7 +38,6 @@ function canEnqueuePickup(spawnState: SpawnManagerState): boolean {
 }
 
 function resolvePickupBaseWorldY(engine: GameEngine, spawnState: SpawnManagerState): number {
-  const scrollOffsetY = engine.worldRef.current.scrollOffsetY;
   const leadFromScroll = spawnWorldYAboveViewport(engine, GAME_CONFIG.POPULATION_LOOKAHEAD);
   if (!spawnState.populationCursorInitialized) {
     return leadFromScroll;
@@ -193,6 +192,10 @@ export class SpawnManager implements GameSystem {
   fixedUpdate(fixedDeltaMs: number): void {
     const engine = this.engine;
     if (!engine) {
+      return;
+    }
+
+    if (!perfFeatureEnabled('SPAWN')) {
       return;
     }
 

@@ -1,7 +1,7 @@
 import type { SpawnPattern } from '../types/SpawnPatternTypes';
 
 /** Temporary diagnostic — set false after confirming cabin renders. */
-export const DEBUG_FORCE_CABIN = true;
+export const DEBUG_FORCE_CABIN = false;
 
 const FORCED_CABIN_PATTERN_ID = 'cabin_avoidance';
 

@@ -1,7 +1,11 @@
 import type { ObstacleRecord } from '../types/ObstacleTypes';
 import type { ChaserState } from '../types/ChaserTypes';
+import {
+  profileChaserAvoidanceBegin,
+  profileChaserAvoidanceEnd,
+  profileChaserScan,
+} from '../profiling/PerformanceProfiling';
 import { GAME_CONFIG } from '../utils/GameConfig';
-import { worldYCenterToScreenY } from '../utils/world-coordinates';
 
 /** Set true temporarily to diagnose one avoidance decision (never leave on). */
 const CHASER_AVOID_DEBUG = false;
@@ -38,6 +42,36 @@ function absDiff(a: number, b: number): number {
   return a > b ? a - b : b - a;
 }
 
+const MIN_AVOID_W = GAME_CONFIG.CHASER_MIN_AVOID_OBSTACLE_WIDTH;
+const MIN_AVOID_H = GAME_CONFIG.CHASER_MIN_AVOID_OBSTACLE_HEIGHT;
+const AVOID_LOOKAHEAD = GAME_CONFIG.CHASER_AVOID_LOOKAHEAD;
+const LOOKAHEAD_PER_LATERAL = GAME_CONFIG.CHASER_LOOKAHEAD_PER_LATERAL_PX;
+const CHASER_W = GAME_CONFIG.CHASER_WIDTH;
+const CHASER_H = GAME_CONFIG.CHASER_HEIGHT;
+
+/**
+ * Conservative vertical relevance test (identical approach-window outer bound).
+ * Uses max possible lookahead so true approach-window hits are never skipped.
+ */
+function isObstacleVerticallyRelevant(
+  obstacle: ObstacleRecord,
+  scrollOffsetY: number,
+  chaserTop: number,
+  chaserBottom: number,
+  maxLookahead: number,
+  passMargin: number,
+): boolean {
+  const halfH = max2(obstacle.height, MIN_AVOID_H) * 0.5;
+  const centerY = scrollOffsetY - obstacle.worldY;
+  const avoidTop = centerY - halfH;
+  if (avoidTop > chaserBottom + passMargin) {
+    return false;
+  }
+  const avoidBottom = centerY + halfH;
+  const approachGap = chaserTop - avoidBottom;
+  return approachGap <= maxLookahead;
+}
+
 /**
  * Chaser-specific visual avoidance envelope around obstacle center.
  * Does not modify gameplay collision dimensions.
@@ -52,9 +86,9 @@ function resolveAvoidanceEnvelope(
   outBottom: { v: number },
 ): void {
   const centerX = obstacle.worldX - cameraOffsetX;
-  const centerY = worldYCenterToScreenY(scrollOffsetY, obstacle.worldY);
-  const avoidWidth = max2(obstacle.width, GAME_CONFIG.CHASER_MIN_AVOID_OBSTACLE_WIDTH);
-  const avoidHeight = max2(obstacle.height, GAME_CONFIG.CHASER_MIN_AVOID_OBSTACLE_HEIGHT);
+  const centerY = scrollOffsetY - obstacle.worldY;
+  const avoidWidth = max2(obstacle.width, MIN_AVOID_W);
+  const avoidHeight = max2(obstacle.height, MIN_AVOID_H);
   const halfW = avoidWidth * 0.5;
   const halfH = avoidHeight * 0.5;
   outLeft.v = centerX - halfW;
@@ -88,15 +122,10 @@ function estimateRequiredLateralPx(
   avoidRight: number,
   referenceX: number,
   viewportWidth: number,
+  padding: number,
 ): number {
-  const leftTarget = clampChaserX(
-    avoidLeft - GAME_CONFIG.CHASER_WIDTH - GAME_CONFIG.CHASER_AVOID_PADDING,
-    viewportWidth,
-  );
-  const rightTarget = clampChaserX(
-    avoidRight + GAME_CONFIG.CHASER_AVOID_PADDING,
-    viewportWidth,
-  );
+  const leftTarget = clampChaserX(avoidLeft - CHASER_W - padding, viewportWidth);
+  const rightTarget = clampChaserX(avoidRight + padding, viewportWidth);
   const leftMove = absDiff(leftTarget, referenceX);
   const rightMove = absDiff(rightTarget, referenceX);
   return leftMove < rightMove ? leftMove : rightMove;
@@ -107,17 +136,20 @@ function resolveEffectiveLookahead(
   avoidRight: number,
   referenceX: number,
   viewportWidth: number,
+  padding: number,
 ): number {
   const requiredLateral = estimateRequiredLateralPx(
     avoidLeft,
     avoidRight,
     referenceX,
     viewportWidth,
+    padding,
   );
-  return (
-    GAME_CONFIG.CHASER_AVOID_LOOKAHEAD +
-    requiredLateral * GAME_CONFIG.CHASER_LOOKAHEAD_PER_LATERAL_PX
-  );
+  return AVOID_LOOKAHEAD + requiredLateral * LOOKAHEAD_PER_LATERAL;
+}
+
+function resolveMaxLookahead(viewportWidth: number): number {
+  return AVOID_LOOKAHEAD + viewportWidth * LOOKAHEAD_PER_LATERAL;
 }
 
 /**
@@ -166,9 +198,7 @@ function computeAvoidanceTargetX(
 ): number {
   const padding = GAME_CONFIG.CHASER_AVOID_PADDING;
   const candidateX =
-    direction < 0
-      ? avoidLeft - GAME_CONFIG.CHASER_WIDTH - padding
-      : avoidRight + padding;
+    direction < 0 ? avoidLeft - CHASER_W - padding : avoidRight + padding;
   return clampChaserX(candidateX, viewportWidth);
 }
 
@@ -178,7 +208,7 @@ function candidateClearsEnvelope(
   avoidRight: number,
   padding: number,
 ): boolean {
-  const chaserRight = candidateX + GAME_CONFIG.CHASER_WIDTH;
+  const chaserRight = candidateX + CHASER_W;
   if (chaserRight + padding <= avoidLeft) {
     return true;
   }
@@ -199,14 +229,28 @@ function measureCandidateClearance(
   referenceX: number,
   viewportWidth: number,
   passMargin: number,
+  maxLookahead: number,
 ): number {
   let minGap = Number.POSITIVE_INFINITY;
   const padding = GAME_CONFIG.CHASER_AVOID_PADDING;
-  const chaserRight = candidateX + GAME_CONFIG.CHASER_WIDTH;
+  const chaserRight = candidateX + CHASER_W;
 
   for (let index = 0; index < obstacles.length; index += 1) {
     const obstacle = obstacles[index];
     if (!obstacle.active || obstacle.id === primaryObstacleId) {
+      continue;
+    }
+
+    if (
+      !isObstacleVerticallyRelevant(
+        obstacle,
+        scrollOffsetY,
+        chaserTop,
+        chaserBottom,
+        maxLookahead,
+        passMargin,
+      )
+    ) {
       continue;
     }
 
@@ -225,6 +269,7 @@ function measureCandidateClearance(
       envBRight.v,
       referenceX,
       viewportWidth,
+      padding,
     );
 
     if (
@@ -291,7 +336,7 @@ function resolveApproachUrgency(
   chaserTop: number,
   chaserBottom: number,
 ): number {
-  const chaserCenterY = chaserTop + GAME_CONFIG.CHASER_HEIGHT * 0.5;
+  const chaserCenterY = chaserTop + CHASER_H * 0.5;
   const obstacleCenterY = (avoidTop + avoidBottom) * 0.5;
   const centerDistance = absDiff(obstacleCenterY, chaserCenterY);
   const approachDistance =
@@ -315,6 +360,7 @@ function findSecondaryThreatId(
   passMargin: number,
   leftTarget: number,
   rightTarget: number,
+  maxLookahead: number,
 ): number {
   const padding = GAME_CONFIG.CHASER_AVOID_PADDING;
   let secondaryId = 0;
@@ -323,6 +369,19 @@ function findSecondaryThreatId(
   for (let index = 0; index < obstacles.length; index += 1) {
     const obstacle = obstacles[index];
     if (!obstacle.active || obstacle.id === primaryObstacleId) {
+      continue;
+    }
+
+    if (
+      !isObstacleVerticallyRelevant(
+        obstacle,
+        scrollOffsetY,
+        chaserTop,
+        chaserBottom,
+        maxLookahead,
+        passMargin,
+      )
+    ) {
       continue;
     }
 
@@ -341,6 +400,7 @@ function findSecondaryThreatId(
       envBRight.v,
       referenceX,
       viewportWidth,
+      padding,
     );
 
     if (
@@ -441,6 +501,7 @@ function isDirectionSafeForObstacle(
   obstacles: ObstacleRecord[],
   referenceX: number,
   passMargin: number,
+  maxLookahead: number,
 ): boolean {
   const targetX = computeAvoidanceTargetX(avoidLeft, avoidRight, direction, viewportWidth);
   if (
@@ -465,6 +526,7 @@ function isDirectionSafeForObstacle(
       referenceX,
       viewportWidth,
       passMargin,
+      maxLookahead,
     ) > 0
   );
 }
@@ -490,6 +552,7 @@ function selectAvoidDirection(
   obstacles: ObstacleRecord[],
   preferredDirection: number,
   passMargin: number,
+  maxLookahead: number,
 ): number {
   const leftTarget = computeAvoidanceTargetX(avoidLeft, avoidRight, -1, viewportWidth);
   const rightTarget = computeAvoidanceTargetX(avoidLeft, avoidRight, 1, viewportWidth);
@@ -510,6 +573,7 @@ function selectAvoidDirection(
         referenceX,
         viewportWidth,
         passMargin,
+        maxLookahead,
       )
     : 0;
   const rightClearance = rightClearsPrimary
@@ -524,6 +588,7 @@ function selectAvoidDirection(
         referenceX,
         viewportWidth,
         passMargin,
+        maxLookahead,
       )
     : 0;
 
@@ -544,6 +609,7 @@ function selectAvoidDirection(
     passMargin,
     leftTarget,
     rightTarget,
+    maxLookahead,
   );
   const secondaryPrefer = secondarySidePreference(
     secondaryId,
@@ -608,7 +674,6 @@ function selectAvoidDirection(
 
   if (CHASER_AVOID_DEBUG) {
     // Development-only: flip CHASER_AVOID_DEBUG to diagnose one decision.
-    // eslint-disable-next-line no-console
     console.log(
       '[ChaserAvoid] primary=',
       primaryObstacleId,
@@ -645,15 +710,29 @@ function resolveSafeFollowTargetX(
   cameraOffsetX: number,
   obstacles: ObstacleRecord[],
 ): number {
-  const chaserBottom = chaserTop + GAME_CONFIG.CHASER_HEIGHT;
+  const chaserBottom = chaserTop + CHASER_H;
   const passMargin = GAME_CONFIG.CHASER_AVOID_PASS_MARGIN;
   const padding = GAME_CONFIG.CHASER_AVOID_PADDING;
-  const followRight = followTargetX + GAME_CONFIG.CHASER_WIDTH;
-  const chaserRight = chaserX + GAME_CONFIG.CHASER_WIDTH;
+  const followRight = followTargetX + CHASER_W;
+  const chaserRight = chaserX + CHASER_W;
+  const maxLookahead = resolveMaxLookahead(viewportWidth);
 
   for (let index = 0; index < obstacles.length; index += 1) {
     const obstacle = obstacles[index];
     if (!obstacle.active) {
+      continue;
+    }
+
+    if (
+      !isObstacleVerticallyRelevant(
+        obstacle,
+        scrollOffsetY,
+        chaserTop,
+        chaserBottom,
+        maxLookahead,
+        passMargin,
+      )
+    ) {
       continue;
     }
 
@@ -672,6 +751,7 @@ function resolveSafeFollowTargetX(
       envARight.v,
       followTargetX,
       viewportWidth,
+      padding,
     );
 
     if (
@@ -723,141 +803,171 @@ export function resolveChaserHorizontalTargetX(
   cameraOffsetX: number,
   obstacles: ObstacleRecord[],
 ): number {
-  const chaserBottom = chaserTop + GAME_CONFIG.CHASER_HEIGHT;
-  const passMargin = GAME_CONFIG.CHASER_AVOID_PASS_MARGIN;
-  const padding = GAME_CONFIG.CHASER_AVOID_PADDING;
-  const chaserX = chaser.x;
-  const chaserRight = chaserX + GAME_CONFIG.CHASER_WIDTH;
-  const followRight = followTargetX + GAME_CONFIG.CHASER_WIDTH;
+  const started = profileChaserAvoidanceBegin();
+  let scans = 0;
+  try {
+    const chaserBottom = chaserTop + CHASER_H;
+    const passMargin = GAME_CONFIG.CHASER_AVOID_PASS_MARGIN;
+    const padding = GAME_CONFIG.CHASER_AVOID_PADDING;
+    const chaserX = chaser.x;
+    const chaserRight = chaserX + CHASER_W;
+    const followRight = followTargetX + CHASER_W;
+    const maxLookahead = resolveMaxLookahead(viewportWidth);
 
-  const committed = findActiveObstacleById(obstacles, chaser.avoidObstacleId);
-  if (committed) {
-    resolveAvoidanceEnvelope(
-      committed,
-      scrollOffsetY,
-      cameraOffsetX,
-      envALeft,
-      envATop,
-      envARight,
-      envABottom,
-    );
+    const committed = findActiveObstacleById(obstacles, chaser.avoidObstacleId);
+    if (committed) {
+      resolveAvoidanceEnvelope(
+        committed,
+        scrollOffsetY,
+        cameraOffsetX,
+        envALeft,
+        envATop,
+        envARight,
+        envABottom,
+      );
 
-    if (obstacleEnvelopeHasPassedChaser(envATop.v, chaserBottom, passMargin)) {
+      if (obstacleEnvelopeHasPassedChaser(envATop.v, chaserBottom, passMargin)) {
+        clearChaserAvoidanceState(chaser);
+      }
+    } else if (chaser.avoidObstacleId > 0) {
       clearChaserAvoidanceState(chaser);
     }
-  } else if (chaser.avoidObstacleId > 0) {
-    clearChaserAvoidanceState(chaser);
-  }
 
-  let primaryId = 0;
-  let primaryLeft = 0;
-  let primaryRight = 0;
-  let primaryUrgency = Number.POSITIVE_INFINITY;
+    let primaryId = 0;
+    let primaryLeft = 0;
+    let primaryRight = 0;
+    let primaryUrgency = Number.POSITIVE_INFINITY;
 
-  for (let index = 0; index < obstacles.length; index += 1) {
-    const obstacle = obstacles[index];
-    if (!obstacle.active) {
-      continue;
-    }
+    for (let index = 0; index < obstacles.length; index += 1) {
+      const obstacle = obstacles[index];
+      if (!obstacle.active) {
+        continue;
+      }
+      scans += 1;
 
-    resolveAvoidanceEnvelope(
-      obstacle,
-      scrollOffsetY,
-      cameraOffsetX,
-      envALeft,
-      envATop,
-      envARight,
-      envABottom,
-    );
+      if (
+        !isObstacleVerticallyRelevant(
+          obstacle,
+          scrollOffsetY,
+          chaserTop,
+          chaserBottom,
+          maxLookahead,
+          passMargin,
+        )
+      ) {
+        continue;
+      }
 
-    const lookahead = resolveEffectiveLookahead(
-      envALeft.v,
-      envARight.v,
-      followTargetX,
-      viewportWidth,
-    );
+      resolveAvoidanceEnvelope(
+        obstacle,
+        scrollOffsetY,
+        cameraOffsetX,
+        envALeft,
+        envATop,
+        envARight,
+        envABottom,
+      );
 
-    if (
-      !isInApproachWindow(
+      const lookahead = resolveEffectiveLookahead(
+        envALeft.v,
+        envARight.v,
+        followTargetX,
+        viewportWidth,
+        padding,
+      );
+
+      if (
+        !isInApproachWindow(
+          envATop.v,
+          envABottom.v,
+          chaserTop,
+          chaserBottom,
+          lookahead,
+          passMargin,
+        )
+      ) {
+        continue;
+      }
+
+      const threatensFollow = corridorThreatensHorizontal(
+        followTargetX,
+        followRight,
+        envALeft.v,
+        envARight.v,
+        padding,
+      );
+      const imminentOverlap = corridorThreatensHorizontal(
+        chaserX,
+        chaserRight,
+        envALeft.v,
+        envARight.v,
+        padding,
+      );
+
+      if (!threatensFollow && !imminentOverlap) {
+        continue;
+      }
+
+      const urgency = resolveApproachUrgency(
         envATop.v,
         envABottom.v,
         chaserTop,
         chaserBottom,
-        lookahead,
-        passMargin,
-      )
-    ) {
-      continue;
+      );
+
+      if (urgency < primaryUrgency) {
+        primaryUrgency = urgency;
+        primaryId = obstacle.id;
+        primaryLeft = envALeft.v;
+        primaryRight = envARight.v;
+      }
     }
 
-    const threatensFollow = corridorThreatensHorizontal(
-      followTargetX,
-      followRight,
-      envALeft.v,
-      envARight.v,
-      padding,
-    );
-    const imminentOverlap = corridorThreatensHorizontal(
-      chaserX,
-      chaserRight,
-      envALeft.v,
-      envARight.v,
-      padding,
-    );
-
-    if (!threatensFollow && !imminentOverlap) {
-      continue;
-    }
-
-    const urgency = resolveApproachUrgency(
-      envATop.v,
-      envABottom.v,
-      chaserTop,
-      chaserBottom,
-    );
-
-    if (urgency < primaryUrgency) {
-      primaryUrgency = urgency;
-      primaryId = obstacle.id;
-      primaryLeft = envALeft.v;
-      primaryRight = envARight.v;
-    }
-  }
-
-  if (primaryId <= 0) {
-    return resolveSafeFollowTargetX(
-      chaserX,
-      followTargetX,
-      chaserTop,
-      viewportWidth,
-      scrollOffsetY,
-      cameraOffsetX,
-      obstacles,
-    );
-  }
-
-  if (
-    chaser.avoidObstacleId > 0 &&
-    chaser.avoidObstacleId !== primaryId &&
-    chaser.avoidDirection !== 0
-  ) {
-    if (
-      isDirectionSafeForObstacle(
-        chaser.avoidDirection,
-        primaryLeft,
-        primaryRight,
-        viewportWidth,
+    if (primaryId <= 0) {
+      return resolveSafeFollowTargetX(
+        chaserX,
+        followTargetX,
         chaserTop,
-        chaserBottom,
-        primaryId,
+        viewportWidth,
         scrollOffsetY,
         cameraOffsetX,
         obstacles,
-        followTargetX,
-        passMargin,
-      )
+      );
+    }
+
+    if (
+      chaser.avoidObstacleId > 0 &&
+      chaser.avoidObstacleId !== primaryId &&
+      chaser.avoidDirection !== 0
     ) {
-      chaser.avoidObstacleId = primaryId;
+      if (
+        isDirectionSafeForObstacle(
+          chaser.avoidDirection,
+          primaryLeft,
+          primaryRight,
+          viewportWidth,
+          chaserTop,
+          chaserBottom,
+          primaryId,
+          scrollOffsetY,
+          cameraOffsetX,
+          obstacles,
+          followTargetX,
+          passMargin,
+          maxLookahead,
+        )
+      ) {
+        chaser.avoidObstacleId = primaryId;
+        return computeAvoidanceTargetX(
+          primaryLeft,
+          primaryRight,
+          chaser.avoidDirection,
+          viewportWidth,
+        );
+      }
+    }
+
+    if (chaser.avoidObstacleId === primaryId && chaser.avoidDirection !== 0) {
       return computeAvoidanceTargetX(
         primaryLeft,
         primaryRight,
@@ -865,41 +975,36 @@ export function resolveChaserHorizontalTargetX(
         viewportWidth,
       );
     }
-  }
 
-  if (chaser.avoidObstacleId === primaryId && chaser.avoidDirection !== 0) {
+    chaser.avoidObstacleId = primaryId;
+    chaser.avoidDirection = selectAvoidDirection(
+      followTargetX,
+      primaryLeft,
+      primaryRight,
+      viewportWidth,
+      chaserTop,
+      chaserBottom,
+      primaryId,
+      scrollOffsetY,
+      cameraOffsetX,
+      obstacles,
+      chaser.lastAvoidDirection,
+      passMargin,
+      maxLookahead,
+    );
+
+    if (chaser.avoidDirection !== 0) {
+      chaser.lastAvoidDirection = chaser.avoidDirection;
+    }
+
     return computeAvoidanceTargetX(
       primaryLeft,
       primaryRight,
       chaser.avoidDirection,
       viewportWidth,
     );
+  } finally {
+    profileChaserScan(scans);
+    profileChaserAvoidanceEnd(started);
   }
-
-  chaser.avoidObstacleId = primaryId;
-  chaser.avoidDirection = selectAvoidDirection(
-    followTargetX,
-    primaryLeft,
-    primaryRight,
-    viewportWidth,
-    chaserTop,
-    chaserBottom,
-    primaryId,
-    scrollOffsetY,
-    cameraOffsetX,
-    obstacles,
-    chaser.lastAvoidDirection,
-    passMargin,
-  );
-
-  if (chaser.avoidDirection !== 0) {
-    chaser.lastAvoidDirection = chaser.avoidDirection;
-  }
-
-  return computeAvoidanceTargetX(
-    primaryLeft,
-    primaryRight,
-    chaser.avoidDirection,
-    viewportWidth,
-  );
 }

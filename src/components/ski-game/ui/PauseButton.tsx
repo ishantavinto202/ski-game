@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect } from 'react';
+import { memo, useCallback, useEffect, useMemo } from 'react';
 import { Pressable, StyleSheet, Text } from 'react-native';
 import Animated, { useAnimatedStyle, useSharedValue } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -6,6 +6,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { requestPauseGame } from '../entities/GameState';
 import { useGameEngineContext } from '../engine/GameEngineContext';
 import { SKI_GAME_COLORS } from '../utils/colors';
+import { writeSharedNumber } from '../utils/shared-value-write';
 
 import {
   GAME_FLOW_STATE_INDEX,
@@ -43,10 +44,16 @@ export const PauseButton = memo(function PauseButton() {
   const flowStateIndex = useSharedValue(GAME_FLOW_STATE_INDEX.ready);
 
   useEffect(() => {
-    flowStateIndex.value = GAME_FLOW_STATE_INDEX[engine.gameStateRef.current.currentState];
+    writeSharedNumber(
+      flowStateIndex,
+      GAME_FLOW_STATE_INDEX[engine.gameStateRef.current.currentState],
+    );
 
     return engine.onFrame(() => {
-      flowStateIndex.value = GAME_FLOW_STATE_INDEX[engine.gameStateRef.current.currentState];
+      writeSharedNumber(
+        flowStateIndex,
+        GAME_FLOW_STATE_INDEX[engine.gameStateRef.current.currentState],
+      );
     });
   }, [engine, flowStateIndex]);
 
@@ -58,11 +65,20 @@ export const PauseButton = memo(function PauseButton() {
     display: flowStateIndex.value === PAUSE_FLOW_PLAYING ? 'flex' : 'none',
   }));
 
-  const top = insets.top + PAUSE_BUTTON_INSET;
-  const right = insets.right + PAUSE_BUTTON_INSET;
+  const rootStyle = useMemo(
+    () => [
+      pauseButtonStyles.root,
+      {
+        top: insets.top + PAUSE_BUTTON_INSET,
+        right: insets.right + PAUSE_BUTTON_INSET,
+      },
+      containerStyle,
+    ],
+    [containerStyle, insets.right, insets.top],
+  );
 
   return (
-    <Animated.View style={[pauseButtonStyles.root, { top, right }, containerStyle]} pointerEvents="box-none">
+    <Animated.View style={rootStyle} pointerEvents="box-none">
       <Pressable
         accessibilityRole="button"
         accessibilityLabel="Pause game"

@@ -1,5 +1,12 @@
-import { memo, useCallback } from 'react';
-import { Image, Pressable, StyleSheet, Text, View } from 'react-native';
+import { memo, useCallback, useMemo } from 'react';
+import {
+  Image,
+  Pressable,
+  StyleSheet,
+  Text,
+  View,
+  type PressableStateCallbackType,
+} from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { SKI_GAME_COLORS } from '../utils/colors';
@@ -80,6 +87,8 @@ const menuStyles = StyleSheet.create({
     opacity: 0.86,
   },
 });
+const playActionStyle = [menuStyles.actionButton, menuStyles.playButton];
+const quitActionStyle = [menuStyles.actionButton, menuStyles.quitButton];
 
 export type MainMenuPlayHandler = () => void;
 export type MainMenuQuitHandler = () => void;
@@ -93,6 +102,10 @@ export type MainMenuProps = {
 export const MAIN_MENU_PLACEHOLDER_QUIT = (): void => {
   // App exit / session teardown will plug in here.
 };
+
+function resolvePressedStyle({ pressed }: PressableStateCallbackType) {
+  return pressed ? menuStyles.buttonPressed : undefined;
+}
 
 export const MainMenu = memo(function MainMenu({
   onPlayGame,
@@ -108,19 +121,21 @@ export const MainMenu = memo(function MainMenu({
     onQuitGame();
   }, [onQuitGame]);
 
+  const rootStyle = useMemo(
+    () => [
+      menuStyles.root,
+      {
+        paddingTop: Math.max(insets.top, 12),
+        paddingBottom: Math.max(insets.bottom, 12),
+        paddingLeft: Math.max(insets.left, 12),
+        paddingRight: Math.max(insets.right, 12),
+      },
+    ],
+    [insets.bottom, insets.left, insets.right, insets.top],
+  );
+
   return (
-    <View
-      style={[
-        menuStyles.root,
-        {
-          paddingTop: Math.max(insets.top, 12),
-          paddingBottom: Math.max(insets.bottom, 12),
-          paddingLeft: Math.max(insets.left, 12),
-          paddingRight: Math.max(insets.right, 12),
-        },
-      ]}
-      pointerEvents="auto"
-    >
+    <View style={rootStyle} pointerEvents="auto">
       <View style={menuStyles.content}>
         <Image
           source={SNOW_DASH_LOGO}
@@ -134,9 +149,9 @@ export const MainMenu = memo(function MainMenu({
             accessibilityRole="button"
             accessibilityLabel="Play Game"
             onPress={handlePlayPress}
-            style={({ pressed }) => [pressed ? menuStyles.buttonPressed : undefined]}
+            style={resolvePressedStyle}
           >
-            <View style={[menuStyles.actionButton, menuStyles.playButton]}>
+            <View style={playActionStyle}>
               <Text style={menuStyles.playLabel}>PLAY GAME</Text>
             </View>
           </Pressable>
@@ -144,9 +159,9 @@ export const MainMenu = memo(function MainMenu({
             accessibilityRole="button"
             accessibilityLabel="Quit Game"
             onPress={handleQuitPress}
-            style={({ pressed }) => [pressed ? menuStyles.buttonPressed : undefined]}
+            style={resolvePressedStyle}
           >
-            <View style={[menuStyles.actionButton, menuStyles.quitButton]}>
+            <View style={quitActionStyle}>
               <Text style={menuStyles.quitLabel}>QUIT GAME</Text>
             </View>
           </Pressable>

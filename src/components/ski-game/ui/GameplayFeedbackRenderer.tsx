@@ -1,6 +1,11 @@
-import { memo, useEffect, useMemo, useRef } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef } from 'react';
 import { StyleSheet, TextInput, View } from 'react-native';
-import Animated, { useAnimatedProps, useAnimatedStyle, useSharedValue } from 'react-native-reanimated';
+import Animated, {
+  makeMutable,
+  useAnimatedProps,
+  useAnimatedStyle,
+  type SharedValue,
+} from 'react-native-reanimated';
 
 import {
   formatGameplayFeedbackHealthLine,
@@ -13,10 +18,12 @@ import {
 import type { ViewportSize } from '../engine/GameEngine';
 import { useGameEngineContext } from '../engine/GameEngineContext';
 import { SKI_GAME_COLORS } from '../utils/colors';
+import { writeSharedNumber } from '../utils/shared-value-write';
 
 const AnimatedTextInput = Animated.createAnimatedComponent(TextInput);
 
 const FEEDBACK_SLOT_INDICES = getGameplayFeedbackSlotIndices();
+const FEEDBACK_SLOT_COUNT = FEEDBACK_SLOT_INDICES.length;
 
 const layerStyle = StyleSheet.create({
   root: {
@@ -51,93 +58,81 @@ const layerStyle = StyleSheet.create({
   },
 });
 
+type FeedbackSlotShared = {
+  left: SharedValue<number>;
+  top: SharedValue<number>;
+  opacity: SharedValue<number>;
+  scoreDelta: SharedValue<number>;
+  healthDamage: SharedValue<number>;
+  scoreLineText: SharedValue<string>;
+  healthLineText: SharedValue<string>;
+};
+
+function createFeedbackSlotShared(): FeedbackSlotShared {
+  return {
+    left: makeMutable(0),
+    top: makeMutable(0),
+    opacity: makeMutable(0),
+    scoreDelta: makeMutable(0),
+    healthDamage: makeMutable(0),
+    scoreLineText: makeMutable(''),
+    healthLineText: makeMutable(''),
+  };
+}
+
 type GameplayFeedbackSlotProps = {
-  slotIndex: number;
+  shared: FeedbackSlotShared;
 };
 
 const GameplayFeedbackSlot = memo(function GameplayFeedbackSlot({
-  slotIndex,
+  shared,
 }: GameplayFeedbackSlotProps) {
-  const engine = useGameEngineContext();
-  const left = useSharedValue(0);
-  const top = useSharedValue(0);
-  const opacity = useSharedValue(0);
-  const scoreDelta = useSharedValue(0);
-  const healthDamage = useSharedValue(0);
-  const scoreLineText = useSharedValue('');
-  const healthLineText = useSharedValue('');
-
   const bubbleStyle = useMemo(() => layerStyle.bubble, []);
   const scoreLineStyle = useMemo(() => layerStyle.scoreLine, []);
   const healthLineStyle = useMemo(() => layerStyle.healthLine, []);
 
-  useEffect(() => {
-    return engine.onFrame(() => {
-      const pool = getGameplayFeedbackPool(engine);
-      const entry = pool.entries[slotIndex];
-
-      if (!entry.active || entry.totalLifeMs <= 0) {
-        if (opacity.value !== 0) {
-          opacity.value = 0;
-        }
-        return;
-      }
-
-      const progress = entry.elapsedMs / entry.totalLifeMs;
-      left.value = entry.screenX;
-      top.value = entry.screenY - GAMEPLAY_FEEDBACK_RISE_PX * progress;
-      opacity.value = progress >= 1 ? 0 : 1 - progress;
-      scoreDelta.value = entry.scoreDelta;
-      healthDamage.value = entry.healthDamage;
-      scoreLineText.value = formatGameplayFeedbackScoreLine(entry.scoreDelta);
-      healthLineText.value = formatGameplayFeedbackHealthLine(entry.healthDamage);
-    });
-  }, [
-    engine,
-    healthDamage,
-    healthLineText,
-    left,
-    opacity,
-    scoreDelta,
-    scoreLineText,
-    slotIndex,
-    top,
-  ]);
-
   const containerStyle = useAnimatedStyle(() => ({
-    left: left.value,
-    top: top.value,
-    opacity: opacity.value,
+    left: shared.left.value,
+    top: shared.top.value,
+    opacity: shared.opacity.value,
   }));
 
   const scoreAnimatedProps = useAnimatedProps(() => ({
-    text: scoreLineText.value,
-    defaultValue: scoreLineText.value,
+    text: shared.scoreLineText.value,
+    defaultValue: shared.scoreLineText.value,
   }));
 
   const healthAnimatedProps = useAnimatedProps(() => ({
-    text: healthLineText.value,
-    defaultValue: healthLineText.value,
+    text: shared.healthLineText.value,
+    defaultValue: shared.healthLineText.value,
   }));
 
   const scoreToneStyle = useAnimatedStyle(() => ({
     color:
-      scoreDelta.value >= 0
+      shared.scoreDelta.value >= 0
         ? SKI_GAME_COLORS.coinPlaceholderBorder
         : SKI_GAME_COLORS.playerPlaceholderBorder,
   }));
 
   const healthLineVisibilityStyle = useAnimatedStyle(() => ({
-    opacity: healthDamage.value > 0 ? opacity.value : 0,
+    opacity: shared.healthDamage.value > 0 ? shared.opacity.value : 0,
   }));
+  const bubbleCompositeStyle = useMemo(
+    () => [bubbleStyle, containerStyle],
+    [bubbleStyle, containerStyle],
+  );
+  const scoreCompositeStyle = useMemo(
+    () => [scoreLineStyle, scoreToneStyle],
+    [scoreLineStyle, scoreToneStyle],
+  );
 
   return (
-    <Animated.View style={[bubbleStyle, containerStyle]} pointerEvents="none">
+    <Animated.View style={bubbleCompositeStyle} pointerEvents="none">
       <AnimatedTextInput
         editable={false}
         pointerEvents="none"
         underlineColorAndroid="transparent"
-        style={[scoreLineStyle, scoreToneStyle]}
+        style={scoreCompositeStyle}
         animatedProps={scoreAnimatedProps}
       />
       <Animated.View style={healthLineVisibilityStyle}>
@@ -163,22 +158,67 @@ export const GameplayFeedbackRenderer = memo(function GameplayFeedbackRenderer({
   const engine = useGameEngineContext();
   const lastFrameMsRef = useRef(0);
 
+  const slots = useMemo(() => {
+    const list: FeedbackSlotShared[] = new Array(FEEDBACK_SLOT_COUNT);
+    for (let index = 0; index < FEEDBACK_SLOT_COUNT; index += 1) {
+      list[index] = createFeedbackSlotShared();
+    }
+    return list;
+  }, []);
+
   useEffect(() => {
     lastFrameMsRef.current = 0;
 
-    return engine.onFrame(() => {
+    return engine.onPlayingFrame(() => {
       const now = performance.now();
       const deltaMs = lastFrameMsRef.current > 0 ? now - lastFrameMsRef.current : 0;
       lastFrameMsRef.current = now;
       tickGameplayFeedback(engine, deltaMs);
+
+      const pool = getGameplayFeedbackPool(engine);
+
+      for (let slotIndex = 0; slotIndex < FEEDBACK_SLOT_COUNT; slotIndex += 1) {
+        const slot = slots[slotIndex];
+        const entry = pool.entries[slotIndex];
+
+        if (!entry.active || entry.totalLifeMs <= 0) {
+          writeSharedNumber(slot.opacity, 0);
+          continue;
+        }
+
+        const progress = entry.elapsedMs / entry.totalLifeMs;
+        writeSharedNumber(slot.left, entry.screenX);
+        writeSharedNumber(slot.top, entry.screenY - GAMEPLAY_FEEDBACK_RISE_PX * progress);
+        writeSharedNumber(slot.opacity, progress >= 1 ? 0 : 1 - progress);
+        writeSharedNumber(slot.scoreDelta, entry.scoreDelta);
+        writeSharedNumber(slot.healthDamage, entry.healthDamage);
+
+        const scoreText = formatGameplayFeedbackScoreLine(entry.scoreDelta);
+        if (slot.scoreLineText.value !== scoreText) {
+          slot.scoreLineText.value = scoreText;
+        }
+        const healthText = formatGameplayFeedbackHealthLine(entry.healthDamage);
+        if (slot.healthLineText.value !== healthText) {
+          slot.healthLineText.value = healthText;
+        }
+      }
     });
-  }, [engine]);
+  }, [engine, slots]);
+
+  const renderSlot = useCallback(
+    (slotIndex: number) => (
+      <GameplayFeedbackSlot key={slotIndex} shared={slots[slotIndex]} />
+    ),
+    [slots],
+  );
+  const slotElements = useMemo(
+    () => FEEDBACK_SLOT_INDICES.map(renderSlot),
+    [renderSlot],
+  );
 
   return (
     <View style={layerStyle.root} pointerEvents="none">
-      {FEEDBACK_SLOT_INDICES.map((slotIndex) => (
-        <GameplayFeedbackSlot key={slotIndex} slotIndex={slotIndex} />
-      ))}
+      {slotElements}
     </View>
   );
 });

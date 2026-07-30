@@ -8,6 +8,10 @@ import type { SpawnRequest } from '../types/SpawnTypes';
 import { COIN_WORLD_SIZE } from '../types/CoinTypes';
 import { SHIELD_WORLD_SIZE } from '../types/ShieldTypes';
 import { SPEED_BOOST_WORLD_SIZE } from '../types/SpeedBoostTypes';
+import {
+  profileSpawnRejected,
+  profileSpawnValidationRetry,
+} from '../profiling/PerformanceProfiling';
 import { GAME_CONFIG } from './GameConfig';
 import { resolvePatternLaneIndex, resolvePatternWorldX } from './spawn-patterns';
 
@@ -18,6 +22,48 @@ export type SpawnFootprint = {
   maxWorldY: number;
   minWorldX: number;
   maxWorldX: number;
+};
+
+/** Module scratches — never return these from public APIs that callers may retain. */
+const footprintScratchA: SpawnFootprint = {
+  minLane: 0,
+  maxLane: 0,
+  minWorldY: 0,
+  maxWorldY: 0,
+  minWorldX: 0,
+  maxWorldX: 0,
+};
+const footprintScratchB: SpawnFootprint = {
+  minLane: 0,
+  maxLane: 0,
+  minWorldY: 0,
+  maxWorldY: 0,
+  minWorldX: 0,
+  maxWorldX: 0,
+};
+const footprintScratchC: SpawnFootprint = {
+  minLane: 0,
+  maxLane: 0,
+  minWorldY: 0,
+  maxWorldY: 0,
+  minWorldX: 0,
+  maxWorldX: 0,
+};
+const patternFootprintScratch: SpawnFootprint = {
+  minLane: 0,
+  maxLane: 0,
+  minWorldY: 0,
+  maxWorldY: 0,
+  minWorldX: 0,
+  maxWorldX: 0,
+};
+const patternEntryScratch: SpawnFootprint = {
+  minLane: 0,
+  maxLane: 0,
+  minWorldY: 0,
+  maxWorldY: 0,
+  minWorldX: 0,
+  maxWorldX: 0,
 };
 
 function mergeFootprint(target: SpawnFootprint, next: SpawnFootprint): void {
@@ -41,6 +87,24 @@ function mergeFootprint(target: SpawnFootprint, next: SpawnFootprint): void {
   }
 }
 
+function writeFootprintFromCenter(
+  out: SpawnFootprint,
+  worldX: number,
+  worldY: number,
+  width: number,
+  height: number,
+  laneIndex: number,
+): void {
+  const halfW = width * 0.5;
+  const halfH = height * 0.5;
+  out.minLane = laneIndex;
+  out.maxLane = laneIndex;
+  out.minWorldY = worldY - halfH;
+  out.maxWorldY = worldY + halfH;
+  out.minWorldX = worldX - halfW;
+  out.maxWorldX = worldX + halfW;
+}
+
 function footprintFromCenter(
   worldX: number,
   worldY: number,
@@ -60,6 +124,17 @@ function footprintFromCenter(
   };
 }
 
+function copyFootprint(source: SpawnFootprint): SpawnFootprint {
+  return {
+    minLane: source.minLane,
+    maxLane: source.maxLane,
+    minWorldY: source.minWorldY,
+    maxWorldY: source.maxWorldY,
+    minWorldX: source.minWorldX,
+    maxWorldX: source.maxWorldX,
+  };
+}
+
 function resolveObstacleVariantDimensions(variant: ObstacleVariant): { width: number; height: number } {
   return OBSTACLE_VARIANT_DIMENSIONS[variant];
 }
@@ -73,32 +148,84 @@ export function footprintsOverlap(a: SpawnFootprint, b: SpawnFootprint): boolean
   );
 }
 
-function pickupRequestFootprint(request: SpawnRequest): SpawnFootprint | null {
-  if (request.kind === 'coin' || request.kind === 'shield' || request.kind === 'speed_boost') {
-    return createPickupSpawnFootprint(
-      request.worldX,
-      request.worldY,
-      request.laneIndex,
-      request.kind,
-    );
+function writePickupRequestFootprint(out: SpawnFootprint, request: SpawnRequest): boolean {
+  if (request.kind !== 'coin' && request.kind !== 'shield' && request.kind !== 'speed_boost') {
+    return false;
   }
-  return null;
+  const size =
+    request.kind === 'coin'
+      ? COIN_WORLD_SIZE
+      : request.kind === 'shield'
+        ? SHIELD_WORLD_SIZE
+        : SPEED_BOOST_WORLD_SIZE;
+  writeFootprintFromCenter(out, request.worldX, request.worldY, size.width, size.height, request.laneIndex);
+  return true;
 }
 
-function obstacleRequestFootprint(request: SpawnRequest): SpawnFootprint | null {
+function writeObstacleRequestFootprint(out: SpawnFootprint, request: SpawnRequest): boolean {
   if (request.kind !== 'obstacle') {
-    return null;
+    return false;
   }
-
   const variant = request.obstacleVariant ?? 'small_rock';
   const dimensions = resolveObstacleVariantDimensions(variant);
-  return footprintFromCenter(
+  writeFootprintFromCenter(
+    out,
     request.worldX,
     request.worldY,
     dimensions.width,
     dimensions.height,
     request.laneIndex,
   );
+  return true;
+}
+
+function writePatternFootprint(
+  out: SpawnFootprint,
+  pattern: SpawnPattern,
+  originY: number,
+  centerLaneIndex: number,
+  laneCount: number,
+  laneWidth: number,
+  playableOriginX: number,
+): void {
+  const obstacles = pattern.obstacles;
+  let hasMerged = false;
+
+  for (let index = 0; index < obstacles.length; index += 1) {
+    const entry = obstacles[index];
+    const laneIndex = resolvePatternLaneIndex(centerLaneIndex, entry.laneOffset, laneCount);
+    const worldX = resolvePatternWorldX(playableOriginX, laneWidth, laneIndex);
+    const worldY = originY - entry.forwardOffset;
+    const dimensions = resolveObstacleVariantDimensions(entry.variant);
+    writeFootprintFromCenter(
+      patternEntryScratch,
+      worldX,
+      worldY,
+      dimensions.width,
+      dimensions.height,
+      laneIndex,
+    );
+    if (!hasMerged) {
+      out.minLane = patternEntryScratch.minLane;
+      out.maxLane = patternEntryScratch.maxLane;
+      out.minWorldY = patternEntryScratch.minWorldY;
+      out.maxWorldY = patternEntryScratch.maxWorldY;
+      out.minWorldX = patternEntryScratch.minWorldX;
+      out.maxWorldX = patternEntryScratch.maxWorldX;
+      hasMerged = true;
+    } else {
+      mergeFootprint(out, patternEntryScratch);
+    }
+  }
+
+  if (!hasMerged) {
+    out.minLane = centerLaneIndex;
+    out.maxLane = centerLaneIndex;
+    out.minWorldY = originY;
+    out.maxWorldY = originY;
+    out.minWorldX = playableOriginX;
+    out.maxWorldX = playableOriginX;
+  }
 }
 
 export function calculatePatternFootprint(
@@ -109,41 +236,17 @@ export function calculatePatternFootprint(
   laneWidth: number,
   playableOriginX: number,
 ): SpawnFootprint {
-  const obstacles = pattern.obstacles;
-  let merged: SpawnFootprint | null = null;
-
-  for (let index = 0; index < obstacles.length; index += 1) {
-    const entry = obstacles[index];
-    const laneIndex = resolvePatternLaneIndex(centerLaneIndex, entry.laneOffset, laneCount);
-    const worldX = resolvePatternWorldX(playableOriginX, laneWidth, laneIndex);
-    const worldY = originY - entry.forwardOffset;
-    const dimensions = resolveObstacleVariantDimensions(entry.variant);
-    const entryFootprint = footprintFromCenter(
-      worldX,
-      worldY,
-      dimensions.width,
-      dimensions.height,
-      laneIndex,
-    );
-    if (merged === null) {
-      merged = entryFootprint;
-    } else {
-      mergeFootprint(merged, entryFootprint);
-    }
-  }
-
-  if (merged === null) {
-    return {
-      minLane: centerLaneIndex,
-      maxLane: centerLaneIndex,
-      minWorldY: originY,
-      maxWorldY: originY,
-      minWorldX: playableOriginX,
-      maxWorldX: playableOriginX,
-    };
-  }
-
-  return merged;
+  writePatternFootprint(
+    patternFootprintScratch,
+    pattern,
+    originY,
+    centerLaneIndex,
+    laneCount,
+    laneWidth,
+    playableOriginX,
+  );
+  // Public API: return a copy so callers may retain the result across calls.
+  return copyFootprint(patternFootprintScratch);
 }
 
 export function createPickupSpawnFootprint(
@@ -192,14 +295,23 @@ export function isActiveObstacleAreaOccupied(
       continue;
     }
 
-    const obstacleFootprint = footprintFromCenter(
+    // Cheap vertical reject before writing footprint scratch.
+    if (obstacle.worldY + obstacle.height * 0.5 < footprint.minWorldY) {
+      continue;
+    }
+    if (obstacle.worldY - obstacle.height * 0.5 > footprint.maxWorldY) {
+      continue;
+    }
+
+    writeFootprintFromCenter(
+      footprintScratchB,
       obstacle.worldX,
       obstacle.worldY,
       obstacle.width,
       obstacle.height,
       obstacle.laneIndex,
     );
-    if (footprintsOverlap(footprint, obstacleFootprint)) {
+    if (footprintsOverlap(footprint, footprintScratchB)) {
       return true;
     }
   }
@@ -220,11 +332,10 @@ export function isSpawnAreaOccupied(
   const cappedPending = pendingCount < pendingRequests.length ? pendingCount : pendingRequests.length;
   for (let index = 0; index < cappedPending; index += 1) {
     const request = pendingRequests[index];
-    const requestFootprint = obstacleRequestFootprint(request);
-    if (!requestFootprint) {
+    if (!writeObstacleRequestFootprint(footprintScratchB, request)) {
       continue;
     }
-    if (footprintsOverlap(footprint, requestFootprint)) {
+    if (footprintsOverlap(footprint, footprintScratchB)) {
       return true;
     }
   }
@@ -247,14 +358,15 @@ export function isPickupAreaOccupied(
     if (!coin.active) {
       continue;
     }
-    const coinFootprint = footprintFromCenter(
+    writeFootprintFromCenter(
+      footprintScratchB,
       coin.worldX,
       coin.worldY,
       coin.width,
       coin.height,
       coin.laneIndex,
     );
-    if (footprintsOverlap(footprint, coinFootprint)) {
+    if (footprintsOverlap(footprint, footprintScratchB)) {
       return true;
     }
   }
@@ -265,14 +377,15 @@ export function isPickupAreaOccupied(
     if (!shield.active) {
       continue;
     }
-    const shieldFootprint = footprintFromCenter(
+    writeFootprintFromCenter(
+      footprintScratchB,
       shield.worldX,
       shield.worldY,
       shield.width,
       shield.height,
       shield.laneIndex,
     );
-    if (footprintsOverlap(footprint, shieldFootprint)) {
+    if (footprintsOverlap(footprint, footprintScratchB)) {
       return true;
     }
   }
@@ -283,14 +396,15 @@ export function isPickupAreaOccupied(
     if (!speedBoost.active) {
       continue;
     }
-    const speedBoostFootprint = footprintFromCenter(
+    writeFootprintFromCenter(
+      footprintScratchB,
       speedBoost.worldX,
       speedBoost.worldY,
       speedBoost.width,
       speedBoost.height,
       speedBoost.laneIndex,
     );
-    if (footprintsOverlap(footprint, speedBoostFootprint)) {
+    if (footprintsOverlap(footprint, footprintScratchB)) {
       return true;
     }
   }
@@ -298,11 +412,10 @@ export function isPickupAreaOccupied(
   const cappedPending = pendingCount < pendingRequests.length ? pendingCount : pendingRequests.length;
   for (let index = 0; index < cappedPending; index += 1) {
     const request = pendingRequests[index];
-    const requestFootprint = pickupRequestFootprint(request);
-    if (!requestFootprint) {
+    if (!writePickupRequestFootprint(footprintScratchB, request)) {
       continue;
     }
-    if (footprintsOverlap(footprint, requestFootprint)) {
+    if (footprintsOverlap(footprint, footprintScratchB)) {
       return true;
     }
   }
@@ -312,15 +425,17 @@ export function isPickupAreaOccupied(
 
 export type PickupSpawnKind = 'coin' | 'shield' | 'speed_boost';
 
-function expandFootprintInsets(footprint: SpawnFootprint, insetPx: number): SpawnFootprint {
-  return {
-    minLane: footprint.minLane,
-    maxLane: footprint.maxLane,
-    minWorldY: footprint.minWorldY - insetPx,
-    maxWorldY: footprint.maxWorldY + insetPx,
-    minWorldX: footprint.minWorldX - insetPx,
-    maxWorldX: footprint.maxWorldX + insetPx,
-  };
+function writeExpandedFootprintInsets(
+  out: SpawnFootprint,
+  footprint: SpawnFootprint,
+  insetPx: number,
+): void {
+  out.minLane = footprint.minLane;
+  out.maxLane = footprint.maxLane;
+  out.minWorldY = footprint.minWorldY - insetPx;
+  out.maxWorldY = footprint.maxWorldY + insetPx;
+  out.minWorldX = footprint.minWorldX - insetPx;
+  out.maxWorldX = footprint.maxWorldX + insetPx;
 }
 
 function isPickupSpawnBlockedByObstacles(
@@ -332,13 +447,20 @@ function isPickupSpawnBlockedByObstacles(
 ): boolean {
   const clearance =
     kind === 'shield' ? GAME_CONFIG.SHIELD_PICKUP_SPAWN_CLEARANCE : 0;
-  const testFootprint = clearance > 0 ? expandFootprintInsets(footprint, clearance) : footprint;
 
-  if (kind === 'shield') {
-    return isSpawnAreaOccupied(testFootprint, obstaclePool, pendingRequests, pendingCount);
+  if (clearance > 0) {
+    writeExpandedFootprintInsets(footprintScratchC, footprint, clearance);
+    if (kind === 'shield') {
+      return isSpawnAreaOccupied(footprintScratchC, obstaclePool, pendingRequests, pendingCount);
+    }
+    return isActiveObstacleAreaOccupied(footprintScratchC, obstaclePool);
   }
 
-  return isActiveObstacleAreaOccupied(testFootprint, obstaclePool);
+  if (kind === 'shield') {
+    return isSpawnAreaOccupied(footprint, obstaclePool, pendingRequests, pendingCount);
+  }
+
+  return isActiveObstacleAreaOccupied(footprint, obstaclePool);
 }
 
 /** After intake, re-check active obstacles (e.g. rocks spawned same frame as enqueue). */
@@ -350,11 +472,19 @@ export function nudgeShieldWorldYClearOfActiveObstacles(
 ): number {
   const { SPAWN_PICKUP_WORLD_Y_RETRY_STEP, SPAWN_PICKUP_WORLD_Y_SEARCH_BANDS } = GAME_CONFIG;
   let candidateY = worldY;
+  const clearance = GAME_CONFIG.SHIELD_PICKUP_SPAWN_CLEARANCE;
 
   for (let attempt = 0; attempt < SPAWN_PICKUP_WORLD_Y_SEARCH_BANDS; attempt += 1) {
-    const footprint = createPickupSpawnFootprint(worldX, candidateY, laneIndex, 'shield');
-    const testFootprint = expandFootprintInsets(footprint, GAME_CONFIG.SHIELD_PICKUP_SPAWN_CLEARANCE);
-    if (!isActiveObstacleAreaOccupied(testFootprint, obstaclePool)) {
+    writeFootprintFromCenter(
+      footprintScratchA,
+      worldX,
+      candidateY,
+      SHIELD_WORLD_SIZE.width,
+      SHIELD_WORLD_SIZE.height,
+      laneIndex,
+    );
+    writeExpandedFootprintInsets(footprintScratchC, footprintScratchA, clearance);
+    if (!isActiveObstacleAreaOccupied(footprintScratchC, obstaclePool)) {
       return candidateY;
     }
     candidateY += SPAWN_PICKUP_WORLD_Y_RETRY_STEP;
@@ -369,9 +499,20 @@ export function isShieldPickupBlockedByActiveObstacles(
   worldY: number,
   laneIndex: number,
 ): boolean {
-  const footprint = createPickupSpawnFootprint(worldX, worldY, laneIndex, 'shield');
-  const testFootprint = expandFootprintInsets(footprint, GAME_CONFIG.SHIELD_PICKUP_SPAWN_CLEARANCE);
-  return isActiveObstacleAreaOccupied(testFootprint, obstaclePool);
+  writeFootprintFromCenter(
+    footprintScratchA,
+    worldX,
+    worldY,
+    SHIELD_WORLD_SIZE.width,
+    SHIELD_WORLD_SIZE.height,
+    laneIndex,
+  );
+  writeExpandedFootprintInsets(
+    footprintScratchC,
+    footprintScratchA,
+    GAME_CONFIG.SHIELD_PICKUP_SPAWN_CLEARANCE,
+  );
+  return isActiveObstacleAreaOccupied(footprintScratchC, obstaclePool);
 }
 
 function isPickupWorldYTooClose(candidateWorldY: number, otherWorldY: number): boolean {
@@ -465,7 +606,8 @@ export function findClearPatternOriginY(
   let retries = 0;
 
   while (retries <= SPAWN_VALIDATION_PATTERN_MAX_RETRIES) {
-    const footprint = calculatePatternFootprint(
+    writePatternFootprint(
+      patternFootprintScratch,
       pattern,
       originY,
       centerLaneIndex,
@@ -474,9 +616,14 @@ export function findClearPatternOriginY(
       spawnLayout.playableOriginX,
     );
     if (
-      !isSpawnAreaOccupied(footprint, obstaclePool, pendingRequests, pendingCount) &&
+      !isSpawnAreaOccupied(
+        patternFootprintScratch,
+        obstaclePool,
+        pendingRequests,
+        pendingCount,
+      ) &&
       !isPickupAreaOccupied(
-        footprint,
+        patternFootprintScratch,
         coinPool,
         shieldPool,
         speedBoostPool,
@@ -488,8 +635,12 @@ export function findClearPatternOriginY(
     }
     originY += PATTERN_VERTICAL_SPACING_MIN;
     retries += 1;
+    if (retries <= SPAWN_VALIDATION_PATTERN_MAX_RETRIES) {
+      profileSpawnValidationRetry();
+    }
   }
 
+  profileSpawnRejected();
   return Number.NaN;
 }
 
@@ -517,11 +668,21 @@ export function findClearPickupSpawn(
     return null;
   }
 
+  const size =
+    kind === 'coin'
+      ? COIN_WORLD_SIZE
+      : kind === 'shield'
+        ? SHIELD_WORLD_SIZE
+        : SPEED_BOOST_WORLD_SIZE;
+
   let probes = 0;
   const yBandLimit =
     SPAWN_PICKUP_WORLD_Y_SEARCH_BANDS > 0 ? SPAWN_PICKUP_WORLD_Y_SEARCH_BANDS : 1;
 
   for (let yBand = 0; yBand < yBandLimit; yBand += 1) {
+    if (yBand > 0) {
+      profileSpawnValidationRetry();
+    }
     const worldY = baseWorldY + yBand * SPAWN_PICKUP_WORLD_Y_RETRY_STEP;
 
     if (
@@ -539,17 +700,28 @@ export function findClearPickupSpawn(
 
     for (let laneOffset = 0; laneOffset < laneCount; laneOffset += 1) {
       if (probes >= SPAWN_VALIDATION_PICKUP_MAX_SEARCH_ATTEMPTS) {
+        profileSpawnRejected();
         return null;
       }
       probes += 1;
+      if (probes > 1) {
+        profileSpawnValidationRetry();
+      }
 
       const laneIndex = (startLaneIndex + laneOffset) % laneCount;
       const worldX = resolvePatternWorldX(playableOriginX, laneWidth, laneIndex);
-      const footprint = createPickupSpawnFootprint(worldX, worldY, laneIndex, kind);
+      writeFootprintFromCenter(
+        footprintScratchA,
+        worldX,
+        worldY,
+        size.width,
+        size.height,
+        laneIndex,
+      );
 
       if (
         !isPickupSpawnBlockedByObstacles(
-          footprint,
+          footprintScratchA,
           kind,
           obstaclePool,
           pendingRequests,
@@ -561,5 +733,6 @@ export function findClearPickupSpawn(
     }
   }
 
+  profileSpawnRejected();
   return null;
 }

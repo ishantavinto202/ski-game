@@ -1,4 +1,5 @@
 import type { GameEngine } from '../engine/GameEngine';
+import { profileCollisionCheck } from '../profiling/PerformanceProfiling';
 import { resetCollisionState } from '../types/CollisionTypes';
 import type { GameSystem } from '../types';
 import { aabbIntersectsWithPadding } from '../utils/collision';
@@ -40,17 +41,33 @@ export class CollisionSystem implements GameSystem {
 
     const scrollOffsetY = engine.worldRef.current.scrollOffsetY;
     const cameraOffsetX = engine.cameraRef.current.offsetX;
-    const { PLAYER_COLLISION_PADDING, OBSTACLE_COLLISION_PADDING } = GAME_CONFIG;
+    const playerPadding = GAME_CONFIG.PLAYER_COLLISION_PADDING;
+    const obstaclePadding = GAME_CONFIG.OBSTACLE_COLLISION_PADDING;
 
     const playerLeft = player.x;
     const playerTop = player.y;
     const playerWidth = player.width;
     const playerHeight = player.height;
+    const playerRight = playerLeft + playerWidth;
+    const playerBottom = playerTop + playerHeight;
 
     const obstacles = engine.obstacleRef.current.obstacles;
     for (let index = 0; index < obstacles.length; index += 1) {
       const obstacle = obstacles[index];
       if (!obstacle.active) {
+        continue;
+      }
+
+      // Conservative reject on gameplay AABB (physical hitbox ⊆ gameplay rect).
+      const gameplayLeft = obstacle.worldX - obstacle.width * 0.5 - cameraOffsetX;
+      const gameplayTop = scrollOffsetY - obstacle.worldY - obstacle.height * 0.5;
+      if (
+        playerRight <= gameplayLeft ||
+        playerLeft >= gameplayLeft + obstacle.width ||
+        playerBottom <= gameplayTop ||
+        playerTop >= gameplayTop + obstacle.height
+      ) {
+        profileCollisionCheck(true, false);
         continue;
       }
 
@@ -61,18 +78,20 @@ export class CollisionSystem implements GameSystem {
         playerTop,
         playerWidth,
         playerHeight,
-        PLAYER_COLLISION_PADDING,
+        playerPadding,
         rect.left,
         rect.top,
         rect.width,
         rect.height,
-        OBSTACLE_COLLISION_PADDING,
+        obstaclePadding,
       );
 
       if (!hit) {
+        profileCollisionCheck(true, false);
         continue;
       }
 
+      profileCollisionCheck(false, true);
       collision.hasCollision = true;
       collision.obstacleId = obstacle.id;
       collision.obstacleType = obstacle.variant;

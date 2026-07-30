@@ -11,7 +11,9 @@ export type SkiTrackState = {
   lastSampleWorldX: number;
   lastSampleWorldY: number;
   hasLastSample: boolean;
-  /** Segment layouts rebuilt each frame for render sync (allocation-free). */
+  /** Incremented only when the point ring changes; render geometry sync keys off this. */
+  layoutRevision: number;
+  /** Segment layouts rebuilt only when `layoutRevision` changes (allocation-free). */
   activeSegmentCount: number;
   segLeftCenterX: Float64Array;
   segLeftCenterY: Float64Array;

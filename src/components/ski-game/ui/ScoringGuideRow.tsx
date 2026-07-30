@@ -1,4 +1,4 @@
-import { memo, useMemo, type ReactNode } from 'react';
+import { memo, useCallback, useMemo, type ReactNode } from 'react';
 import { Image, StyleSheet, Text, View } from 'react-native';
 
 import type {
@@ -124,6 +124,15 @@ const rowStyles = StyleSheet.create({
     fontWeight: '700',
   },
 });
+const penaltyColumnStyle = [rowStyles.chipColumn, { width: 108 }];
+const penaltyHeartStyle = [
+  rowStyles.healthHeart,
+  { color: MENU_EFFECT_NEGATIVE },
+];
+const defaultPreviewStyle = {
+  width: SCORING_GUIDE_PREVIEW_SIZE - 6,
+  height: SCORING_GUIDE_PREVIEW_SIZE - 6,
+};
 
 type ScoringGuideRowProps = {
   item: ScoringGuideItem;
@@ -144,17 +153,27 @@ const GuideStatChip = memo(function GuideStatChip({
   leading,
 }: GuideStatChipProps) {
   const colors = CHIP_TONE[tone];
+  const chipStyle = useMemo(
+    () => [
+      rowStyles.chip,
+      { backgroundColor: colors.background, borderColor: colors.border },
+    ],
+    [colors.background, colors.border],
+  );
+  const valueStyle = useMemo(
+    () => [rowStyles.chipValue, { color: colors.foreground }],
+    [colors.foreground],
+  );
+  const labelStyle = useMemo(
+    () => [rowStyles.chipLabel, { color: colors.foreground }],
+    [colors.foreground],
+  );
   return (
-    <View
-      style={[
-        rowStyles.chip,
-        { backgroundColor: colors.background, borderColor: colors.border },
-      ]}
-    >
+    <View style={chipStyle}>
       {leading}
-      <Text style={[rowStyles.chipValue, { color: colors.foreground }]}>{value}</Text>
+      <Text style={valueStyle}>{value}</Text>
       {label ? (
-        <Text style={[rowStyles.chipLabel, { color: colors.foreground }]}>{label}</Text>
+        <Text style={labelStyle}>{label}</Text>
       ) : null}
     </View>
   );
@@ -177,7 +196,7 @@ const PenaltyChips = memo(function PenaltyChips({
   healthPenalty,
 }: PenaltyChipsProps) {
   return (
-    <View style={[rowStyles.chipColumn, { width: 108 }]}>
+    <View style={penaltyColumnStyle}>
       <GuideStatChip
         tone="negative"
         value={formatPenaltyScore(scorePenalty)}
@@ -188,7 +207,7 @@ const PenaltyChips = memo(function PenaltyChips({
           tone="negative"
           value={`-${healthPenalty}`}
           leading={
-            <Text style={[rowStyles.healthHeart, { color: MENU_EFFECT_NEGATIVE }]}>♥</Text>
+            <Text style={penaltyHeartStyle}>♥</Text>
           }
         />
       ) : null}
@@ -206,18 +225,25 @@ const BenefitChips = memo(function BenefitChips({ chips, itemId }: BenefitChipsP
     itemId === 'coin' || itemId === 'shield' || itemId === 'speed_boost'
       ? BENEFIT_COLUMN_WIDTH[itemId]
       : 108;
+  const columnStyle = useMemo(
+    () => [rowStyles.chipColumn, { width }],
+    [width],
+  );
+  const renderChip = useCallback(
+    (chip: GuideBenefitChip) => (
+      <GuideStatChip
+        key={`${chip.value}-${chip.label}`}
+        tone={chip.tone}
+        value={chip.value}
+        label={chip.label}
+      />
+    ),
+    [],
+  );
+  const chipElements = useMemo(() => chips.map(renderChip), [chips, renderChip]);
 
   return (
-    <View style={[rowStyles.chipColumn, { width }]}>
-      {chips.map((chip) => (
-        <GuideStatChip
-          key={`${chip.value}-${chip.label}`}
-          tone={chip.tone}
-          value={chip.value}
-          label={chip.label}
-        />
-      ))}
-    </View>
+    <View style={columnStyle}>{chipElements}</View>
   );
 });
 
@@ -232,18 +258,19 @@ export const ScoringGuideRow = memo(function ScoringGuideRow({
       const scale = Math.min(displaySize / w, displaySize / h);
       const displayW = w * scale;
       const displayH = h * scale;
+      const atlasStyle = {
+        position: 'absolute' as const,
+        width: atlasW * scale,
+        height: atlasH * scale,
+        left: -x * scale + (SCORING_GUIDE_PREVIEW_SIZE - displayW) / 2,
+        top: -y * scale + (SCORING_GUIDE_PREVIEW_SIZE - displayH) / 2,
+      };
       return (
         <View style={rowStyles.previewClip}>
           <Image
             source={item.asset}
             resizeMode="stretch"
-            style={{
-              position: 'absolute',
-              width: atlasW * scale,
-              height: atlasH * scale,
-              left: -x * scale + (SCORING_GUIDE_PREVIEW_SIZE - displayW) / 2,
-              top: -y * scale + (SCORING_GUIDE_PREVIEW_SIZE - displayH) / 2,
-            }}
+            style={atlasStyle}
           />
         </View>
       );
@@ -251,18 +278,19 @@ export const ScoringGuideRow = memo(function ScoringGuideRow({
 
     if (item.guideAssetLayout) {
       const { width, height, offsetX = 0, offsetY = 0 } = item.guideAssetLayout;
+      const guideLayoutStyle = {
+        position: 'absolute' as const,
+        width,
+        height,
+        left: offsetX,
+        top: offsetY,
+      };
       return (
         <View style={rowStyles.previewClip}>
           <Image
             source={item.asset}
             resizeMode="stretch"
-            style={{
-              position: 'absolute',
-              width,
-              height,
-              left: offsetX,
-              top: offsetY,
-            }}
+            style={guideLayoutStyle}
           />
         </View>
       );
@@ -272,22 +300,37 @@ export const ScoringGuideRow = memo(function ScoringGuideRow({
       <Image
         source={item.asset}
         resizeMode="contain"
-        style={{ width: SCORING_GUIDE_PREVIEW_SIZE - 6, height: SCORING_GUIDE_PREVIEW_SIZE - 6 }}
+        style={defaultPreviewStyle}
       />
     );
   }, [item]);
+  const cardStyle = useMemo(
+    () => [rowStyles.card, isLastInSection ? rowStyles.cardLast : null],
+    [isLastInSection],
+  );
 
-  let effects: ReactNode = null;
-  if (item.scorePenalty !== undefined) {
-    effects = (
-      <PenaltyChips scorePenalty={item.scorePenalty} healthPenalty={item.healthPenalty} />
-    );
-  } else if (item.benefitChips && item.benefitChips.length > 0) {
-    effects = <BenefitChips chips={item.benefitChips} itemId={item.id} />;
-  }
+  const effects = useMemo(() => {
+    if (item.scorePenalty !== undefined) {
+      return (
+        <PenaltyChips
+          scorePenalty={item.scorePenalty}
+          healthPenalty={item.healthPenalty}
+        />
+      );
+    }
+    if (item.benefitChips && item.benefitChips.length > 0) {
+      return <BenefitChips chips={item.benefitChips} itemId={item.id} />;
+    }
+    return null;
+  }, [
+    item.benefitChips,
+    item.healthPenalty,
+    item.id,
+    item.scorePenalty,
+  ]);
 
   return (
-    <View style={[rowStyles.card, isLastInSection ? rowStyles.cardLast : null]}>
+    <View style={cardStyle}>
       <View style={rowStyles.previewBox}>{preview}</View>
       <View style={rowStyles.info}>
         <Text style={rowStyles.title} numberOfLines={1}>

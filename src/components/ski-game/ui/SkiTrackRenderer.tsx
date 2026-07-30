@@ -1,195 +1,167 @@
-import { memo, useEffect, useMemo } from 'react';
-import { StyleSheet, View } from 'react-native';
-import Animated, { useAnimatedStyle, useSharedValue, type SharedValue } from 'react-native-reanimated';
+import { memo, useCallback, useEffect, useMemo, useRef } from 'react';
+import { StyleSheet, type ViewStyle } from 'react-native';
+import Animated, {
+  makeMutable,
+  useAnimatedProps,
+  useAnimatedStyle,
+  useSharedValue,
+  type SharedValue,
+} from 'react-native-reanimated';
+import Svg, { Path, type PathProps } from 'react-native-svg';
 
 import {
   getChaserSkiTrackState,
-  getSkiTrackSegmentSlotIndices,
   getSkiTrackState,
-  isSkiTrackSegmentVisible,
-  readSkiTrackSegmentLayout,
   syncSkiTrackRendererFrame,
 } from '../effects/SkiTrack';
-import type { GameEngine, ViewportSize } from '../engine/GameEngine';
+import type { ViewportSize } from '../engine/GameEngine';
 import { useGameEngineContext } from '../engine/GameEngineContext';
 import type { SkiTrackState } from '../types/SkiTrackTypes';
 import { SKI_GAME_COLORS } from '../utils/colors';
 import { GAME_CONFIG } from '../utils/GameConfig';
+import { writeSharedNumber } from '../utils/shared-value-write';
 
-const SEGMENT_SLOT_INDICES = getSkiTrackSegmentSlotIndices();
+const AnimatedPath = Animated.createAnimatedComponent(Path);
 
-export type SkiTrackOwner = 'player' | 'chaser';
-
-function resolveTrackState(engine: GameEngine, owner: SkiTrackOwner): SkiTrackState {
-  return owner === 'player' ? getSkiTrackState(engine) : getChaserSkiTrackState(engine);
+/**
+ * Twelve fade bands preserve the authored near/far trail gradient while reducing
+ * 188 permanently mounted rotated Views to twelve SVG paths.
+ */
+const PATH_BAND_COUNT = 12;
+const PATH_BAND_INDICES: number[] = [];
+for (let index = 0; index < PATH_BAND_COUNT; index += 1) {
+  PATH_BAND_INDICES.push(index);
 }
 
 const layerStyle = StyleSheet.create({
   root: {
     ...StyleSheet.absoluteFillObject,
   },
-  stroke: {
-    position: 'absolute',
-    backgroundColor: SKI_GAME_COLORS.skiTrackStroke,
+  svg: {
+    ...StyleSheet.absoluteFillObject,
   },
 });
 
-const trackWidthStyle = {
-  height: GAME_CONFIG.SKI_TRACK_WIDTH,
-  borderRadius: GAME_CONFIG.SKI_TRACK_WIDTH * 0.5,
-};
-
-type SkiTrackStrokeProps = {
-  centerX: SharedValue<number>;
-  centerY: SharedValue<number>;
-  length: SharedValue<number>;
-  angleDeg: SharedValue<number>;
-  opacity: SharedValue<number>;
-  strokeStyle: { position: 'absolute'; backgroundColor: string };
-};
-
-const SkiTrackStroke = memo(function SkiTrackStroke({
-  centerX,
-  centerY,
-  length,
-  angleDeg,
-  opacity,
-  strokeStyle,
-}: SkiTrackStrokeProps) {
-  const animatedStyle = useAnimatedStyle(() => {
-    const segmentLength = length.value;
-    const trackWidth = GAME_CONFIG.SKI_TRACK_WIDTH;
-    return {
-      left: centerX.value - segmentLength * 0.5,
-      top: centerY.value - trackWidth * 0.5,
-      width: segmentLength,
-      opacity: opacity.value,
-      transform: [{ rotate: `${angleDeg.value}deg` }],
-    };
-  });
-
-  return <Animated.View style={[strokeStyle, trackWidthStyle, animatedStyle]} pointerEvents="none" />;
-});
-
-type SkiTrackSegmentSlotProps = {
-  owner: SkiTrackOwner;
-  segmentIndex: number;
-  viewport: ViewportSize;
-};
-
-const SkiTrackSegmentSlot = memo(function SkiTrackSegmentSlot({
-  owner,
-  segmentIndex,
-  viewport,
-}: SkiTrackSegmentSlotProps) {
-  const engine = useGameEngineContext();
-  const leftCenterX = useSharedValue(0);
-  const leftCenterY = useSharedValue(0);
-  const rightCenterX = useSharedValue(0);
-  const rightCenterY = useSharedValue(0);
-  const length = useSharedValue(0);
-  const angleDeg = useSharedValue(0);
-  const opacity = useSharedValue(0);
-
-  const strokeStyle = useMemo(() => layerStyle.stroke, []);
-
-  useEffect(() => {
-    return engine.onFrame(() => {
-      const state = resolveTrackState(engine, owner);
-      if (segmentIndex >= state.activeSegmentCount) {
-        if (opacity.value !== 0) {
-          opacity.value = 0;
-        }
-        return;
-      }
-
-      const layout = readSkiTrackSegmentLayout(state, segmentIndex);
-      length.value = layout.length;
-      angleDeg.value = layout.angleDeg;
-
-      const segmentVisible =
-        isSkiTrackSegmentVisible(
-          layout.leftCenterX,
-          layout.leftCenterY,
-          layout.length,
-          viewport.width,
-          viewport.height,
-        ) ||
-        isSkiTrackSegmentVisible(
-          layout.rightCenterX,
-          layout.rightCenterY,
-          layout.length,
-          viewport.width,
-          viewport.height,
-        );
-
-      if (!segmentVisible) {
-        if (opacity.value !== 0) {
-          opacity.value = 0;
-        }
-        return;
-      }
-
-      opacity.value = layout.opacity;
-      leftCenterX.value = layout.leftCenterX;
-      leftCenterY.value = layout.leftCenterY;
-      rightCenterX.value = layout.rightCenterX;
-      rightCenterY.value = layout.rightCenterY;
-    });
-  }, [
-    angleDeg,
-    engine,
-    leftCenterX,
-    leftCenterY,
-    length,
-    opacity,
-    owner,
-    rightCenterX,
-    rightCenterY,
-    segmentIndex,
-    viewport.height,
-    viewport.width,
-  ]);
-
+function resolveBandOpacity(bandIndex: number): number {
+  const progress =
+    PATH_BAND_COUNT > 1 ? bandIndex / (PATH_BAND_COUNT - 1) : 1;
   return (
-    <>
-      <SkiTrackStroke
-        centerX={leftCenterX}
-        centerY={leftCenterY}
-        length={length}
-        angleDeg={angleDeg}
-        opacity={opacity}
-        strokeStyle={strokeStyle}
-      />
-      <SkiTrackStroke
-        centerX={rightCenterX}
-        centerY={rightCenterY}
-        length={length}
-        angleDeg={angleDeg}
-        opacity={opacity}
-        strokeStyle={strokeStyle}
-      />
-    </>
+    GAME_CONFIG.SKI_TRACK_OPACITY_FAR +
+    (GAME_CONFIG.SKI_TRACK_OPACITY - GAME_CONFIG.SKI_TRACK_OPACITY_FAR) *
+      progress
   );
-});
+}
 
-type SkiTrackLayerProps = {
-  owner: SkiTrackOwner;
-  viewport: ViewportSize;
+function quantizeCoordinate(value: number): number {
+  return Math.round(value * 10) * 0.1;
+}
+
+function appendRailSegment(
+  currentPath: string,
+  centerX: number,
+  centerY: number,
+  halfLength: number,
+  directionX: number,
+  directionY: number,
+  cameraOffsetX: number,
+  scrollOffsetY: number,
+): string {
+  const startX = quantizeCoordinate(
+    centerX - directionX * halfLength - cameraOffsetX,
+  );
+  const startY = quantizeCoordinate(
+    centerY - directionY * halfLength + scrollOffsetY,
+  );
+  const endX = quantizeCoordinate(
+    centerX + directionX * halfLength - cameraOffsetX,
+  );
+  const endY = quantizeCoordinate(
+    centerY + directionY * halfLength + scrollOffsetY,
+  );
+  return `${currentPath}M${startX},${startY}L${endX},${endY}`;
+}
+
+function appendTrackToBands(
+  state: SkiTrackState,
+  pathBands: string[],
+  cameraOffsetX: number,
+  scrollOffsetY: number,
+): void {
+  const opacityRange =
+    GAME_CONFIG.SKI_TRACK_OPACITY - GAME_CONFIG.SKI_TRACK_OPACITY_FAR;
+
+  for (
+    let segmentIndex = 0;
+    segmentIndex < state.activeSegmentCount;
+    segmentIndex += 1
+  ) {
+    const normalizedOpacity =
+      opacityRange > 0
+        ? (state.segOpacity[segmentIndex] -
+            GAME_CONFIG.SKI_TRACK_OPACITY_FAR) /
+          opacityRange
+        : 1;
+    const unclampedBand = Math.round(
+      normalizedOpacity * (PATH_BAND_COUNT - 1),
+    );
+    const bandIndex =
+      unclampedBand < 0
+        ? 0
+        : unclampedBand >= PATH_BAND_COUNT
+          ? PATH_BAND_COUNT - 1
+          : unclampedBand;
+    const angleRadians = state.segAngleDeg[segmentIndex] * (Math.PI / 180);
+    const directionX = Math.cos(angleRadians);
+    const directionY = Math.sin(angleRadians);
+    const halfLength = state.segLength[segmentIndex] * 0.5;
+
+    let bandPath = pathBands[bandIndex];
+    bandPath = appendRailSegment(
+      bandPath,
+      state.segLeftCenterX[segmentIndex],
+      state.segLeftCenterY[segmentIndex],
+      halfLength,
+      directionX,
+      directionY,
+      cameraOffsetX,
+      scrollOffsetY,
+    );
+    pathBands[bandIndex] = appendRailSegment(
+      bandPath,
+      state.segRightCenterX[segmentIndex],
+      state.segRightCenterY[segmentIndex],
+      halfLength,
+      directionX,
+      directionY,
+      cameraOffsetX,
+      scrollOffsetY,
+    );
+  }
+}
+
+type SkiTrackPathProps = {
+  pathData: SharedValue<string>;
+  opacity: number;
 };
 
-const SkiTrackLayer = memo(function SkiTrackLayer({ owner, viewport }: SkiTrackLayerProps) {
+const SkiTrackPath = memo(function SkiTrackPath({
+  pathData,
+  opacity,
+}: SkiTrackPathProps) {
+  const animatedProps = useAnimatedProps<PathProps>(() => ({
+    d: pathData.value,
+  }));
+
   return (
-    <View style={layerStyle.root} pointerEvents="none">
-      {SEGMENT_SLOT_INDICES.map((segmentIndex) => (
-        <SkiTrackSegmentSlot
-          key={`${owner}-${segmentIndex}`}
-          owner={owner}
-          segmentIndex={segmentIndex}
-          viewport={viewport}
-        />
-      ))}
-    </View>
+    <AnimatedPath
+      animatedProps={animatedProps}
+      fill="none"
+      stroke={SKI_GAME_COLORS.skiTrackStroke}
+      strokeWidth={GAME_CONFIG.SKI_TRACK_WIDTH}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      opacity={opacity}
+    />
   );
 });
 
@@ -197,19 +169,133 @@ type SkiTrackRendererProps = {
   viewport: ViewportSize;
 };
 
-export const SkiTrackRenderer = memo(function SkiTrackRenderer({ viewport }: SkiTrackRendererProps) {
+export const SkiTrackRenderer = memo(function SkiTrackRenderer({
+  viewport,
+}: SkiTrackRendererProps) {
   const engine = useGameEngineContext();
+  const currentCameraOffsetX = useSharedValue(0);
+  const currentScrollOffsetY = useSharedValue(0);
+  const pathAnchorCameraOffsetX = useSharedValue(0);
+  const pathAnchorScrollOffsetY = useSharedValue(0);
+  const lastPlayerRevisionRef = useRef(-1);
+  const lastChaserRevisionRef = useRef(-1);
+  const lastPathSyncMsRef = useRef(Number.NEGATIVE_INFINITY);
+  const pathScratchRef = useRef<string[]>(
+    new Array(PATH_BAND_COUNT).fill(''),
+  );
+  const pathBands = useMemo(() => {
+    const values: SharedValue<string>[] = new Array(PATH_BAND_COUNT);
+    for (let index = 0; index < PATH_BAND_COUNT; index += 1) {
+      values[index] = makeMutable('');
+    }
+    return values;
+  }, []);
 
   useEffect(() => {
-    return engine.onFrame(() => {
+    return engine.onPlayingFrame(() => {
+      const nextCameraOffsetX = engine.cameraRef.current.offsetX;
+      const nextScrollOffsetY = engine.worldRef.current.scrollOffsetY;
+      writeSharedNumber(currentCameraOffsetX, nextCameraOffsetX);
+      writeSharedNumber(currentScrollOffsetY, nextScrollOffsetY);
+
+      const playerState = getSkiTrackState(engine);
+      const chaserState = getChaserSkiTrackState(engine);
+      const playerChanged =
+        lastPlayerRevisionRef.current !== playerState.layoutRevision;
+      const chaserChanged =
+        lastChaserRevisionRef.current !== chaserState.layoutRevision;
+      if (!playerChanged && !chaserChanged) {
+        return;
+      }
+      const elapsedMs = engine.timeRef.current.elapsedMs;
+      const lastPathSyncMs = lastPathSyncMsRef.current;
+      if (
+        elapsedMs >= lastPathSyncMs &&
+        elapsedMs - lastPathSyncMs <
+        GAME_CONFIG.SKI_TRACK_PATH_SYNC_INTERVAL_MS
+      ) {
+        return;
+      }
+
       syncSkiTrackRendererFrame(engine, viewport);
+      const scratch = pathScratchRef.current;
+      for (let index = 0; index < PATH_BAND_COUNT; index += 1) {
+        scratch[index] = '';
+      }
+      appendTrackToBands(
+        playerState,
+        scratch,
+        nextCameraOffsetX,
+        nextScrollOffsetY,
+      );
+      appendTrackToBands(
+        chaserState,
+        scratch,
+        nextCameraOffsetX,
+        nextScrollOffsetY,
+      );
+      for (let index = 0; index < PATH_BAND_COUNT; index += 1) {
+        if (pathBands[index].value !== scratch[index]) {
+          pathBands[index].value = scratch[index];
+        }
+      }
+
+      writeSharedNumber(pathAnchorCameraOffsetX, nextCameraOffsetX);
+      writeSharedNumber(pathAnchorScrollOffsetY, nextScrollOffsetY);
+      lastPlayerRevisionRef.current = playerState.layoutRevision;
+      lastChaserRevisionRef.current = chaserState.layoutRevision;
+      lastPathSyncMsRef.current = elapsedMs;
     });
-  }, [engine, viewport]);
+  }, [
+    currentCameraOffsetX,
+    currentScrollOffsetY,
+    engine,
+    pathAnchorCameraOffsetX,
+    pathAnchorScrollOffsetY,
+    pathBands,
+    viewport,
+  ]);
+
+  const layerTransformStyle = useAnimatedStyle<ViewStyle>(() => ({
+    transform: [
+      {
+        translateX:
+          pathAnchorCameraOffsetX.value - currentCameraOffsetX.value,
+      },
+      {
+        translateY:
+          currentScrollOffsetY.value - pathAnchorScrollOffsetY.value,
+      },
+    ] as ViewStyle['transform'],
+  }));
+  const animatedLayerStyle = useMemo(
+    () => [layerStyle.root, layerTransformStyle],
+    [layerTransformStyle],
+  );
+  const renderPath = useCallback(
+    (bandIndex: number) => (
+      <SkiTrackPath
+        key={bandIndex}
+        pathData={pathBands[bandIndex]}
+        opacity={resolveBandOpacity(bandIndex)}
+      />
+    ),
+    [pathBands],
+  );
+  const pathElements = useMemo(
+    () => PATH_BAND_INDICES.map(renderPath),
+    [renderPath],
+  );
 
   return (
-    <View style={layerStyle.root} pointerEvents="none">
-      <SkiTrackLayer owner="player" viewport={viewport} />
-      <SkiTrackLayer owner="chaser" viewport={viewport} />
-    </View>
+    <Animated.View style={animatedLayerStyle} pointerEvents="none">
+      <Svg
+        width={viewport.width}
+        height={viewport.height}
+        style={layerStyle.svg}
+      >
+        {pathElements}
+      </Svg>
+    </Animated.View>
   );
 });
